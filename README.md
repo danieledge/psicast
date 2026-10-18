@@ -107,6 +107,33 @@ With control allowed, the viewer's taps and keys reach the Psion as if they were
 - If the Atom doesn't answer, PsiCast tries again by itself, less often as time goes on. The line at the bottom of its screen says why.
 - PsiCast reads the screen only while someone is watching and the Psion is on, and only glances at it when the screen is still: a quarter of the frame buffer 20 times a second (about 1.5 ms each), nothing encoded or sent.
 
+### Colour themes
+
+The Psion sends only its 16 greys; the colouring is done by the viewer, on the phone, so it costs the Psion and the link nothing. Pick a theme in the viewer's settings (the gear, *Look*); each viewer has its own.
+
+- **5mx LCD** (the standard), **Paper**, **Amber**, **Green screen**, **Dark**, **Warm** and **Mint** map the 16 greys onto a range of colours: from the theme's ink to its paper, or along a few chosen stops.
+- **Series 7** and **Modern** colour the Psion's interface itself, as a colour EIKON would have drawn it: dialog title bars, buttons, the toolbar, selections, scroll bars, menus, and the icons. **Series 7** uses the colours and the colour pictures of the Psion Series 7, the 5mx's colour sibling, from its own ROM. **Modern** is a flat palette of today's (navy, slate, teal on a warm white), with its own pictures drawn for it.
+
+<p align="center"><img src="docs/img/psicast-themes.png" alt="The same dialog in Paper (the Psion's own greys), Series 7 and Modern" width="640"><br>The same dialog in Paper (the Psion's own greys), Series 7 and Modern</p>
+
+**How the interface colouring works.** A palette alone can't do it: the 5mx draws a dialog's title bar, its buttons, the toolbar, menus and scroll bars all in the same light grey, and the Series 7 colours only some of them. So the viewer finds the parts by the shapes EIKON draws them with (the SDK's own drawing code):
+
+- **A dialog:** its thick raised border, then a light grey title bar with a grey line under it, then the body.
+- **A command button:** a black line all round, white along the top and left, dark grey along the bottom and right, round a light grey face.
+- **The toolbar:** the box down the right-hand side, its buttons its full width (a set one, sunken and white).
+- **A selection:** a solid black (or, without the focus, dark grey) box with white writing and nothing else round it; not a busy message or an infoprint, which look alike but sit in a border.
+- **A scroll bar** (23 pixels wide, black down both sides, its arrows and thumb drawn as buttons) and **a menu** (a dialog's border with no title bar).
+
+Each part found is filled from its edges in with its colour, holes in its writing included (the inside of an e or an o); anything it doesn't recognise keeps its plain greys, which is far better than colouring someone's document. A big change arrives a strip at a time, top first, and a dialog is coloured as far as it has come. The pass runs on the whole screen at most every 150 ms and takes a few milliseconds on a phone.
+
+**Dithered greys.** The 5mx makes its light grey from a fine checkerboard of two greys; on a phone's sharp screen that shows as a pattern. Series 7 and Modern paint such a checkerboard as one flat colour, up to its edges and its writing, while a lone dot or the hole in a letter stays as it is.
+
+**Icons.** The 5mx draws its pictures (program icons, toolbar pictures, the Extras bar) with a mask, pixel for pixel the same every time, so the viewer can find each one exactly: it keeps an index of the 5mx's own pictures (`atom/src/s7icons.json`, `atom/src/modicons.json`), looks for them in every change, and paints the theme's colour version over each one it finds (only an exact match; one partly hidden by a menu is still found by the rows that show). The Series 7's colour pictures were paired with the 5mx's grey ones by `atom/tools/s7icons.py`; the Modern ones are drawn by `atom/tools/modicons.py` from the specs in `atom/tools/modicons/`. The pictures of PsiTerm, PsiMail, PsiWeb and PsiCast are in the Modern pack too.
+
+<p align="center"><img src="docs/img/psicast-modern-system.png" alt="The System screen in the Modern theme, with its colour icons" width="640"><br>The System screen in Modern, with its own colour pictures</p>
+
+What stays grey: the contents of documents, photos and web pages (Modern's evenly spaced greys keep their tones, with a cool tint), and anything a program draws its own way. The code is `atom/src/viewer.html` (`findRoles`, `paintRow`) and `atom/src/iconmatch.js`; `atom/hosttest/test_roles.js` and `test_iconmatch.js` check them against real 5mx screens.
+
 ## How it works
 
 PsiCast is two programs, like the others in the suite: `PsiCast.app`, the window and the settings, and `psicast.exe`, the engine, which runs only while sharing and talks to the app through a shared memory chunk (`engine/psicast.h`).
