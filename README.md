@@ -1,8 +1,11 @@
 # PsiCast
 
-Shows the **Psion Series 5mx**'s screen, live, in a web browser - on an iPhone, say - through an M5Stack Atom on the Psion's serial port, and if you want, lets the person watching tap and type on the Psion. It can also turn the Psion into a Bluetooth keyboard for your phone.
+Shows the **Psion Series 5mx**'s screen, live, in a web browser - on an iPhone, say - through an M5Stack Atom on the Psion's serial port, **in colour if you like**, and, if you allow it, lets the person watching tap and type on the Psion. It can also turn the Psion into a Bluetooth keyboard for your phone.
 
-- The whole 640 x 240 screen in its 16 greys, as the Psion draws it: up to 20 updates a second while it changes, and a change after a still spell shows within about a tenth of a second. Colour themes in the viewer (Series 7, Modern and others) colour EIKON's title bars, buttons, selections and icons.
+<p align="center"><img src="docs/img/psicast-modern-system.png" alt="The 5mx's System screen on the phone, in the Modern colour theme" width="640"><br><i>A 5mx's System screen on the phone, in colour: the Modern theme</i></p>
+
+- **In colour.** The viewer can colour the 5mx's greyscale screen as if EIKON had been drawn in colour: title bars, buttons, the toolbar, selections, scroll bars and menus each get their own colour, and the icons are swapped for colour pictures. Choose **Series 7** (the colours and the colour icons of the Psion Series 7, from its own ROM) or **Modern** (a flat palette of today's), or one of seven simpler tints (5mx LCD, Paper, Amber, Green screen, Dark, Warm, Mint). It's all done on the phone, so it costs the Psion nothing. See [*Colour themes*](#colour-themes).
+- **Live:** the whole 640 x 240 screen in its 16 greys, as the Psion draws it, up to 20 updates a second while it changes; a change after a still spell shows within about a tenth of a second.
 - Watch only, as standard. **Allow control from the viewer** lets the viewer tap the screen and the icons round it, and type.
 - **Pause** (Shift+Ctrl+W, in every program while sharing) stops sending before you type a password; the viewer keeps the last picture.
 - **Type on phone** (Shift+Ctrl+B): the Psion's keyboard types into the phone, with the Atom as its Bluetooth keyboard.
@@ -130,7 +133,7 @@ Each part found is filled from its edges in with its colour, holes in its writin
 
 **Icons.** The 5mx draws its pictures (program icons, toolbar pictures, the Extras bar) with a mask, pixel for pixel the same every time, so the viewer can find each one exactly: it keeps an index of the 5mx's own pictures (`atom/src/s7icons.json`, `atom/src/modicons.json`), looks for them in every change, and paints the theme's colour version over each one it finds (only an exact match; one partly hidden by a menu is still found by the rows that show). The Series 7's colour pictures were paired with the 5mx's grey ones by `atom/tools/s7icons.py`; the Modern ones are drawn by `atom/tools/modicons.py` from the specs in `atom/tools/modicons/`. The pictures of PsiTerm, PsiMail, PsiWeb and PsiCast are in the Modern pack too.
 
-<p align="center"><img src="docs/img/psicast-modern-system.png" alt="The System screen in the Modern theme, with its colour icons" width="640"><br>The System screen in Modern, with its own colour pictures</p>
+<p align="center"><img src="docs/img/psicast-s7-system.png" alt="The System screen in the Series 7 theme, with the Series 7's own colour icons" width="640"><br>The System screen in Series 7, with the Series 7's own colour pictures</p>
 
 What stays grey: the contents of documents, photos and web pages (Modern's evenly spaced greys keep their tones, with a cool tint), and anything a program draws its own way. The code is `atom/src/viewer.html` (`findRoles`, `paintRow`) and `atom/src/iconmatch.js`; `atom/hosttest/test_roles.js` and `test_iconmatch.js` check them against real 5mx screens.
 
