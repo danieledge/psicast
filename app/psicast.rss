@@ -33,12 +33,12 @@ RESOURCE EIK_APP_INFO
 	toolbar=r_cs_toolbar;
 	}
 
-// The toolbar: the name, four buttons, the clock. Share stays pressed in
-// while the screen is shared (tap it again to stop), Pause while paused,
-// Type while the keys go to the phone (tap it again to stop typing). Back
-// goes to the program to be shown. (Allow control from the viewer is on
-// the Share menu and in Preferences: set once, and it asks first.) The pictures come from PsiCast.mbm
-// (cast/pkg/mktbar.py), put on by CCsAppUi::ToolbarPicturesL.
+// The toolbar: the name, four buttons, the clock. The page's three choices
+// already start sharing, typing on the phone and control, so the buttons
+// are the other things wanted while sharing: Pause (stays pressed in while
+// paused), Preferences, Help, and Back to the program to be shown. The
+// pictures come from PsiCast.mbm (pkg/mktbar.py), put on by
+// CCsAppUi::ToolbarPicturesL.
 RESOURCE TOOLBAR r_cs_toolbar
 	{
 	breadth=KEikStdToolBarWidth;
@@ -51,9 +51,9 @@ RESOURCE TOOLBAR r_cs_toolbar
 			length=KEikStdFileNameLabelHeight;
 			control=LABEL { txt="PsiCast"; horiz_align=EEikLabelAlignHCenter; vert_align=EEikLabelAlignVCenter; };
 			},
-		TBAR_BUTTON { id=ECsCmdShareButton; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Share"; flags=EEikToolBarCtrlHasSetMinLength; length=KEikStdToolBarButtonHeight; },
 		TBAR_BUTTON { id=ECsCmdPause; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Pause"; flags=EEikToolBarCtrlHasSetMinLength; length=KEikStdToolBarButtonHeight; },
-		TBAR_BUTTON { id=ECsCmdKeyboard; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Type"; flags=EEikToolBarCtrlHasSetMinLength; length=KEikStdToolBarButtonHeight; },
+		TBAR_BUTTON { id=ECsCmdPrefs; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Prefs"; flags=EEikToolBarCtrlHasSetMinLength; length=KEikStdToolBarButtonHeight; },
+		TBAR_BUTTON { id=ECsCmdHelp; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Help"; flags=EEikToolBarCtrlHasSetMinLength; length=KEikStdToolBarButtonHeight; },
 		TBAR_BUTTON { id=ECsCmdPrevious; layout=EEikCmdButTextRightPictureLeft|EEikCmdButDenseFont|EEikCmdButExcessToText; txt="Back"; flags=EEikToolBarCtrlHasSetMinLength; length=KEikStdToolBarButtonHeight; },
 		TBAR_CTRL
 			{

@@ -7,7 +7,7 @@ enum TCsCommandIds
 	{
 	ECsCmdStart = 0x1000,       // Share > Start sharing (Shift+Ctrl+G)
 	ECsCmdStop,                 // Share > Stop sharing (Shift+Ctrl+E)
-	ECsCmdShareButton,          // the Share button: pressed in while sharing, tap again to stop
+	ECsCmdShareButton,          // the Share screen choice on the page: starts sharing, or stops it
 	ECsCmdPause,                // Share > Pause sharing (tick box, Shift+Ctrl+W; in every program while sharing)
 	ECsCmdControl,              // Share > Allow control from the viewer (tick box, Shift+Ctrl+R)
 	ECsCmdPrevious,             // File > Go to previous program (Shift+Ctrl+Y)
@@ -19,7 +19,9 @@ enum TCsCommandIds
 	ECsCmdDisconnect,           // Tools > Disconnect (Ctrl+U): the Psion Internet connection down
 	ECsCmdHelp,
 	ECsCmdAbout,
-	ECsCmdKeyboard              // Share > Type on phone (tick box, Shift+Ctrl+B; the Type button)
+	ECsCmdKeyboard,             // Share > Type on phone (tick box, Shift+Ctrl+B; Type on phone on the page)
+	ECsCmdShareOnly,            // the page's Share only: shares with control off, or stops
+	ECsCmdShareControl          // the page's Allow control: shares with control on (it asks first)
 	};
 
 enum TCsDialogIds

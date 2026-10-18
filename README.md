@@ -66,10 +66,10 @@ Open the Atom's address followed by `/screen` (for example `http://192.168.1.40/
 
 ## Using it
 
-1. Tap **Share** on the toolbar (or press Shift+Ctrl+G). PsiCast connects to the Atom the way Tools > Connection settings says - the same settings as PsiTerm, PsiMail and PsiWeb - and says "Sharing the screen".
+1. Tap **Share only** on PsiCast's page to share for watching, or **Allow control** to share and let the viewer tap and type too (it asks first). Shift+Ctrl+G shares the way Preferences say. PsiCast connects to the Atom the way Tools > Connection settings says - the same settings as PsiTerm, PsiMail and PsiWeb - and says "Sharing the screen".
 2. On the phone, open the Atom's address followed by `/screen`, for example `http://192.168.1.40/screen`. The Atom shows its address on its own screen; PsiCast shows it too once the Atom has said. The page asks for the Atom's web password.
 3. Go to the program you want to show: tap **Back** (Shift+Ctrl+Y) to return to the one you used last.
-4. To stop, tap **Share** again (or Shift+Ctrl+E).
+4. To stop, press Shift+Ctrl+E, or tap **Share only** while it is pressed in. Tapping **Allow control** while it is pressed in turns control off and goes on sharing.
 
 | Key | |
 |---|---|
@@ -98,11 +98,11 @@ With control allowed, the viewer's taps and keys reach the Psion as if they were
 
 ### Typing on the phone
 
-**Share > Type on phone** (Shift+Ctrl+B, or **Type** on the toolbar) makes the Psion the phone's keyboard: the Atom is a Bluetooth keyboard paired with the phone, and every key typed on the Psion goes to it ([`docs/PROTOCOL.md`](docs/PROTOCOL.md), *The phone keyboard*). It needs an Atom with a phone keyboard (WELCOME says so); otherwise the command is dimmed and says "Not available - the Atom has no phone keyboard".
+**Share > Type on phone** (Shift+Ctrl+B, or **Type on phone** on PsiCast's page) makes the Psion the phone's keyboard: the Atom is a Bluetooth keyboard paired with the phone, and every key typed on the Psion goes to it ([`docs/PROTOCOL.md`](docs/PROTOCOL.md), *The phone keyboard*). It needs an Atom with a phone keyboard (WELCOME says so); otherwise the command is dimmed and says "Not available - the Atom has no phone keyboard".
 
 - Pair once: on the iPhone, Settings > Bluetooth > *PsiConnect keyboard*, while PsiCast says "Waiting for the phone". Set Settings > General > Keyboard > Hardware Keyboard to British, so the symbols come out as on the Psion.
 - The keys: characters as the Psion's layout makes them; Ctrl+letter as Ctrl+letter; Menu is Cmd (held: Menu+Tab, Tab switches apps); Enter, Esc, Tab, Del, Fn+Del or Shift+Del (forward delete), the arrows, and Fn+arrows (Home, End, Page up, Page down).
-- While typing, PsiCast takes every key (the Menu key too) before EIKON does. Shift+Ctrl+B, the big **Stop typing** target on the screen, Type on the toolbar, or going to another program stops it.
+- While typing, PsiCast takes every key (the Menu key too) before EIKON does. Shift+Ctrl+B, the big **Stop typing** target on the screen, or going to another program stops it.
 - Not sharing: PsiCast connects to the Atom for the keyboard only, and sends no pictures (as paused). Stop sharing while typing keeps that connection; stopping typing then hangs up.
 
 ### Connection and power

@@ -4,15 +4,15 @@
 Stands in for the Atom modem with PsiCast firmware: a Hayes modem on a unix
 socket (what the emulator's serial bridge connects to, see core/tools/emu/run.sh
 EMU_SERIAL) or on a TCP port, which answers ATDT192.168.7.1:5961 with
-CONNECT and then speaks link A (cast/docs/PROTOCOL.md): WELCOME (with the
+CONNECT and then speaks link A (docs/PROTOCOL.md): WELCOME (with the
 viewer's address if --url), VIEWERS, ACKs, PINGs (with the last update
 applied), KEYREQ, and the viewer's INPUT; it checks HELLO and DEVINFO.
-Every UPDATE is decoded with the real codec (cast/codec/pccodec.c, built
+Every UPDATE is decoded with the real codec (codec/pccodec.c, built
 here as a shared library and used through ctypes) and the screen written
 out as PNG, to compare with the emulator's own screenshot.
 
-    python3 cast/test/fakeatom.py --unix /tmp/x/sock --out build/cast-atom
-    python3 cast/test/fakeatom.py --tcp 7777 ...
+    python3 test/fakeatom.py --unix /tmp/x/sock --out build/cast-atom
+    python3 test/fakeatom.py --tcp 7777 ...
 
   --out DIR        where screen-NNNN.png, last.png and atom.log go
   --viewers N      the VIEWERS count to report (default 1)
@@ -65,8 +65,8 @@ listens on a unix socket or on 127.0.0.1 only.
 import argparse, ctypes, os, select, socket, struct, subprocess, sys, time, zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.abspath(os.path.join(HERE, '..', '..'))
-CODEC = os.path.join(REPO, 'cast', 'codec')
+REPO = os.path.abspath(os.path.join(HERE, '..'))
+CODEC = os.path.join(REPO, 'codec')
 
 T_HELLO, T_UPDATE, T_STATUS, T_BYE, T_DEVINFO = 0x01, 0x02, 0x03, 0x04, 0x05
 T_WELCOME, T_ACK, T_KEYREQ, T_VIEWERS, T_INPUT, T_PING = 0x81, 0x82, 0x83, 0x84, 0x85, 0x86

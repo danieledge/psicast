@@ -19,17 +19,20 @@ static const TCsHelpTopic KHelpTopics[] =
 	  "It needs the Atom with its PsiCast firmware, connected to the Psion the way "
 	  "Tools > Connection settings says (the same settings as PsiTerm, PsiMail and PsiWeb).\n"
 	  "\n"
-	  "PsiCast's page has three choices: Share screen, Type on phone and Allow control. "
+	  "PsiCast's page has three choices: Share only, Type on phone and Allow control. "
 	  "Tap one to use it, or move to it with the arrow keys and press Enter. Each says "
 	  "how it is now. The lines at the bottom say what to open on the phone and how "
 	  "fast the screen goes.\n"
 	  "\n"
-	  "To share the screen, tap Share screen (or Share on the toolbar, or press "
-	  "Shift+Ctrl+G). PsiCast connects to the Atom and says \"Sharing the screen\". Then "
+	  "To share the screen for watching, tap Share only. To share it and let the "
+	  "viewer tap and type too, tap Allow control (it asks first). Either one connects to "
+	  "the Atom and says \"Sharing the screen\"; Shift+Ctrl+G shares the way Preferences "
+	  "say. Then "
 	  "go to the program you want to show: tap Back (Shift+Ctrl+Y) to go back to the one "
 	  "you used last, or tap its icon.\n"
 	  "\n"
-	  "To stop, tap Share screen again, or press Shift+Ctrl+E." },
+	  "To stop, press Shift+Ctrl+E, or tap Share only while it is pressed in. "
+	  "Tapping Allow control while it is pressed in turns control off and goes on sharing." },
 
 	{ "Watching on the phone",
 	  "On the phone, join the same Wi-Fi network as the Atom and open its address in the "
@@ -51,7 +54,7 @@ static const TCsHelpTopic KHelpTopics[] =
 	  "PsiCast (not while you type on the phone, when every key but Shift+Ctrl+B goes to "
 	  "the phone, nor after PsiCast has closed with Keep sharing).\n"
 	  "\n"
-	  "Share > Allow control from the viewer (Shift+Ctrl+R; Allow control on the page) lets the "
+	  "Share > Allow control from the viewer (Shift+Ctrl+R) lets the "
 	  "viewer tap on the screen and on the icons round it, and type: the Psion does what "
 	  "they do as if it were you. It is off as standard. While it is off, or while sharing "
 	  "is paused, PsiCast ignores the viewer's taps and keys.\n"
@@ -59,7 +62,7 @@ static const TCsHelpTopic KHelpTopics[] =
 	  "The viewer cannot switch the Psion off." },
 
 	{ "Typing on the phone",
-	  "Share > Type on phone (Shift+Ctrl+B; Type on phone on the page, or the Type button) makes this Psion's keyboard "
+	  "Share > Type on phone (Shift+Ctrl+B, or Type on phone on the page) makes this Psion's keyboard "
 	  "the phone's: the Atom is a Bluetooth keyboard to the phone, and every key you type "
 	  "goes to it. It needs an Atom with a phone keyboard; if it has none, the command and "
 	  "the choice on the page are dimmed. (PsiCast goes by what the Atom said last: after the Atom's firmware is "
@@ -81,11 +84,11 @@ static const TCsHelpTopic KHelpTopics[] =
 	  "forwards; Fn and the arrow keys are Home, End, Page up and Page down.\n"
 	  "\n"
 	  "To stop, press Shift+Ctrl+B (the one key that does not go to the phone), or tap "
-	  "Stop typing on the screen or Type on the toolbar. Typing stops by itself if you go "
+	  "Stop typing on the screen. Typing stops by itself if you go "
 	  "to another program." },
 
 	{ "Preferences",
-	  "Tools > Preferences (Ctrl+K):\n"
+	  "Tools > Preferences (Ctrl+K, or Preferences on the toolbar):\n"
 	  "\n"
 	  "Highest update rate: how often PsiCast may send the screen while it changes. Fewer "
 	  "updates save the batteries; every change still shows, a little later.\n"

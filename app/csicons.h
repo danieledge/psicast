@@ -3,9 +3,9 @@
 #define CSICONS_H
 enum TCsIconId
 	{
-	EMbmToolShare = 0, EMbmToolShareMask = 1,
-	EMbmToolPause = 2, EMbmToolPauseMask = 3,
-	EMbmToolType = 4, EMbmToolTypeMask = 5,
+	EMbmToolPause = 0, EMbmToolPauseMask = 1,
+	EMbmToolPrefs = 2, EMbmToolPrefsMask = 3,
+	EMbmToolHelp = 4, EMbmToolHelpMask = 5,
 	EMbmToolPrevious = 6, EMbmToolPreviousMask = 7,
 	EMbmPageShare = 8, EMbmPageShareMask = 9,
 	EMbmPageType = 10, EMbmPageTypeMask = 11,

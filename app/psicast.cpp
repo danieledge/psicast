@@ -1,9 +1,9 @@
 // PSICAST.CPP - PsiCast.app: share the Psion's screen with a web browser.
 //
-// One view (CCsView), PsiCast's page: three big choices - Share screen,
-// Type on phone, Allow control - each saying how it is now, and a status
+// One view (CCsView), PsiCast's page: three big choices - Share only,
+// Type on phone, Allow control (which shares too) - each saying how it is now, and a status
 // strip with where to look on the phone and how fast it goes. They are
-// another way in to the Share menu's commands and the toolbar's buttons.
+// another way in to the Share menu's commands.
 // In the keyboard mode (Share > Type on phone) the view says how the typing
 // on the phone goes instead, with a big pen target to stop. Reading,
 // encoding and sending the screen is psicast.exe's work, through the chunk
@@ -23,7 +23,7 @@
 #include "psilink.h"
 #include "pglinktest.h"
 
-_LIT(KVersion, "0.14");            // also cast/pkg/psicast.pkg
+_LIT(KVersion, "0.15");            // also cast/pkg/psicast.pkg
 _LIT(KEngineExe, "psicast.exe");
 _LIT(KIniFile, "C:\\System\\Apps\\PsiCast\\PsiCast.ini");
 _LIT(KAtomHost, "192.168.7.1");    // the Atom's own address (PROTOCOL.md link A)
@@ -251,10 +251,10 @@ void CCsView::SetFocusTile(TInt aTile)
 	InvalidateTile(aTile);
 	}
 
-// the same commands as the toolbar's and the Share menu's
+// the same commands as the Share menu's
 void CCsView::ActL(TInt aTile)
 	{
-	const TInt cmd[ECsTileCount] = { ECsCmdShareButton, ECsCmdKeyboard, ECsCmdControl };
+	const TInt cmd[ECsTileCount] = { ECsCmdShareOnly, ECsCmdKeyboard, ECsCmdShareControl };
 	if (aTile >= 0 && aTile < ECsTileCount)
 		iUi.HandleCommandL(cmd[aTile]);
 	}
@@ -365,7 +365,7 @@ static TInt WrapText(const CFont* aFont, const TDesC& aText, TInt aWidth, TPtrC*
 // available: its words are grey (a tap still says why).
 void CCsView::DrawTile(CWindowGc& aGc, TInt aTile, TInt aLines) const
 	{
-	_LIT(KShare, "Share screen");
+	_LIT(KShare, "Share only");
 	_LIT(KType, "Type on phone");
 	_LIT(KControl, "Allow control");
 	const TDesC* names[ECsTileCount] = { &KShare, &KType, &KControl };
@@ -891,13 +891,9 @@ void CCsAppUi::ConstructL()
 	(void)pics;                              // (no PsiCast.mbm: words only)
 	if (iToolBar)
 		{
-		const TInt latch[3] = { ECsCmdShareButton, ECsCmdPause, ECsCmdKeyboard };
-		for (TInt k = 0; k < 3; k++)
-			{
-			CEikButtonBase* b = (CEikButtonBase*)iToolBar->ControlById(latch[k]);
-			if (b)
-				b->SetBehavior(EEikButtonLatches);
-			}
+		CEikButtonBase* b = (CEikButtonBase*)iToolBar->ControlById(ECsCmdPause);
+		if (b)
+			b->SetBehavior(EEikButtonLatches);
 		if (!iSettings.iToolbar)
 			iToolBar->MakeVisible(EFalse);
 		}
@@ -1367,7 +1363,7 @@ void CCsAppUi::StateText(TDes& aText) const
 	}
 
 // how each of the page's choices is now, in a few words; aOn: on (the
-// choice is pressed in, as its toolbar button is latched); aDimmed: not
+// choice is pressed in, as a latched toolbar button); aDimmed: not
 // available
 void CCsAppUi::TileState(TInt aTile, TDes& aText, TBool& aOn, TBool& aDimmed) const
 	{
@@ -1377,7 +1373,7 @@ void CCsAppUi::TileState(TInt aTile, TDes& aText, TBool& aOn, TBool& aDimmed) co
 	switch (aTile)
 		{
 	case ECsTileShare:
-		aOn = Sharing();
+		aOn = Sharing() && !iSettings.iControl;
 		if (!aOn)
 			aText = _L("Not sharing");
 		else if (phase == CS_PHASE_STARTING || phase == CS_PHASE_CONNECTING)
@@ -1412,14 +1408,19 @@ void CCsAppUi::TileState(TInt aTile, TDes& aText, TBool& aOn, TBool& aDimmed) co
 			aText = _L("Not typing");
 		break;
 	default:
-		aOn = iSettings.iControl;
-		aText = aOn ? _L("Viewers can tap & type") : _L("View only");
+		aOn = Sharing() && iSettings.iControl;
+		if (aOn)
+			aText = _L("On - tap & type");
+		else if (Sharing())
+			aText = _L("Off - watch only");
+		else
+			aText = _L("Off");
 		break;
 		}
 	}
 
 // ----- the phone keyboard ------------------------------------------------------------
-// Share > Type on phone (Shift+Ctrl+B, the Type button): the Atom is a
+// Share > Type on phone (Shift+Ctrl+B, Type on phone on the page): the Atom is a
 // Bluetooth keyboard to the phone, and every key typed here goes to it as
 // PROTOCOL.md's KEYS. The keys are turned into KEYS events here, where the
 // key events are, and put in the chunk's ring; the bell makes the engine
@@ -1790,25 +1791,20 @@ void CCsAppUi::ShowToolBarL(TBool aShow)
 	SaveSettings();
 	}
 
-// the latching buttons say what is so
+// the Pause button says what is so
 void CCsAppUi::ButtonStates()
 	{
 	if (!iToolBar || iClosing)
 		return;
-	const TInt ids[3] = { ECsCmdShareButton, ECsCmdPause, ECsCmdKeyboard };
-	const TBool on[3] = { Sharing(), Sharing() && iPaused, iKbdMode };
-	for (TInt k = 0; k < 3; k++)
+	CEikButtonBase* b = (CEikButtonBase*)iToolBar->ControlById(ECsCmdPause);
+	if (!b)
+		return;
+	CEikButtonBase::TState want = Sharing() && iPaused ? CEikButtonBase::ESet : CEikButtonBase::EClear;
+	if (b->State() != want)
 		{
-		CEikButtonBase* b = (CEikButtonBase*)iToolBar->ControlById(ids[k]);
-		if (!b)
-			continue;
-		CEikButtonBase::TState want = on[k] ? CEikButtonBase::ESet : CEikButtonBase::EClear;
-		if (b->State() != want)
-			{
-			b->SetState(want);
-			if (iToolBar->IsVisible())
-				b->DrawNow();
-			}
+		b->SetState(want);
+		if (iToolBar->IsVisible())
+			b->DrawNow();
 		}
 	}
 
@@ -1861,6 +1857,27 @@ void CCsAppUi::HandleCommandL(TInt aCommand)
 		break;
 	case ECsCmdControl:
 		ControlL(!iSettings.iControl);
+		break;
+	case ECsCmdShareOnly:                    // the page: watching only
+		if (Sharing() && !iSettings.iControl)
+			StopSharing();
+		else
+			{
+			if (iSettings.iControl)
+				ControlL(EFalse);
+			if (!Sharing())
+				StartSharingL();
+			}
+		break;
+	case ECsCmdShareControl:                 // the page: sharing, with control
+		if (Sharing() && iSettings.iControl)
+			ControlL(EFalse);
+		else
+			{
+			ControlL(ETrue);                 // (asks first)
+			if (iSettings.iControl && !Sharing())
+				StartSharingL();
+			}
 		break;
 	case ECsCmdPrevious:
 		PreviousProgram();
@@ -2025,9 +2042,9 @@ void CCsAppUi::ButtonPictureL(TInt aId, TInt aIcon)
 
 void CCsAppUi::ToolbarPicturesL()
 	{
-	ButtonPictureL(ECsCmdShareButton, EMbmToolShare);
 	ButtonPictureL(ECsCmdPause, EMbmToolPause);
-	ButtonPictureL(ECsCmdKeyboard, EMbmToolType);
+	ButtonPictureL(ECsCmdPrefs, EMbmToolPrefs);
+	ButtonPictureL(ECsCmdHelp, EMbmToolHelp);
 	ButtonPictureL(ECsCmdPrevious, EMbmToolPrevious);
 	}
 
