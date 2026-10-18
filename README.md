@@ -1,5 +1,7 @@
 # PsiCast
 
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-support-FFDD00?logo=buymeacoffee&logoColor=000)](https://buymeacoffee.com/danedge)
+
 Shows the **Psion Series 5mx**'s screen, live, in a web browser - on an iPhone, say - through an M5Stack Atom on the Psion's serial port, **in colour if you like**, and, if you allow it, lets the person watching tap and type on the Psion. It can also turn the Psion into a Bluetooth keyboard for your phone.
 
 <p align="center"><img src="docs/img/psicast-modern-system.png" alt="The 5mx's System screen on the phone, in the Modern colour theme" width="640"><br><i>A 5mx's System screen on the phone, in colour: the Modern theme</i></p>
@@ -196,7 +198,8 @@ The decoded screens match the emulator's own screenshots pixel for pixel, at 4 a
 
 ## Support
 
-PsiCast is free. If it's useful to you, see the Support section of [PsiTerm's README](https://github.com/danieledge/psiterm#support).
+If PsiCast puts your Psion on the big screen and you'd like to say thanks,
+you can [buy me a coffee](https://buymeacoffee.com/danedge).
 
 ## Licence
 
