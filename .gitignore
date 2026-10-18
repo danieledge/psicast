@@ -1,0 +1,25 @@
+# build output (cast/build.sh writes dist/PsiCast.sis here; objects go to
+# the SDK's folders and the checkout's build/)
+/dist/
+*.marm
+*.o
+*.obj
+*.map
+*.rpp
+__pycache__/
+*.pyc
+# host tests' output
+/atom/hosttest/test_cast
+/atom/hosttest/hostmodem
+/atom/hosttest/render_screens
+/atom/hosttest/libpccodec.so
+/atom/hosttest/screens/
+/test/test_*
+/test/bench
+/test/fuzz
+/test/memuse
+
+# local files, not published (tools/export-public.sh leaves them out)
+*_local.*
+*.local.*
+*.local

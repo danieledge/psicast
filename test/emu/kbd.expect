@@ -1,0 +1,41 @@
+# The KEYS events kbdtest.sh's keys must make (fakeatom.py --expect-keys).
+# One a line, as fakeatom.py logs them.
+MODE 1
+# h, Shift+I, Fn+4, Shift+3: characters as the Psion's layout made them
+CHAR 'h'
+CHAR 'I'
+CHAR '@'
+CHAR 0xa3
+# Ctrl+C: Ctrl held, then the letter with Ctrl (not a control code)
+HOLD Ctrl
+CHAR 'c' +Ctrl
+HOLD none
+# Menu+Tab, Tab: Cmd held across both (the phone's app switcher)
+HOLD Cmd
+KEY Tab +Cmd
+KEY Tab +Cmd
+HOLD none
+# arrows, Shift+arrow, Fn+Up, Fn+Left
+KEY Left
+KEY Up
+KEY Right +Shift
+KEY PageUp
+KEY Home
+# Enter, Esc, Del, Fn+Del, Shift+Del
+KEY Enter
+KEY Esc
+KEY Backspace
+KEY Delete
+KEY Delete
+# Ctrl+1: the window server keeps Ctrl+digits for a character code
+HOLD Ctrl
+CHAR '1' +Ctrl
+HOLD none
+# Space, then Menu alone (the menu bar must not open)
+CHAR 'space'
+HOLD Cmd
+HOLD none
+# Shift+Ctrl+B leaves: Ctrl went down first; B itself is never sent
+HOLD Ctrl
+HOLD none
+MODE 0

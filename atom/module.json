@@ -1,0 +1,14 @@
+{
+	"name": "cast",
+	"include": ["src", "../codec"],
+	"defines": {
+		"*": ["PC_NO_ENCODER"],
+		"esp32s3": ["CAST_KBD_BLE=1", "CAST_KBD_USB=1",
+			"CONFIG_BT_NIMBLE_ROLE_CENTRAL_DISABLED", "CONFIG_BT_NIMBLE_ROLE_OBSERVER_DISABLED",
+			"CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1", "CONFIG_BT_NIMBLE_MAX_BONDS=4"]
+	},
+	"lib_deps": {
+		"esp32s3": ["h2zero/NimBLE-Arduino@2.5.1", "USB"]
+	},
+	"src_filter": ["+<src/*.cpp>", "+<../codec/pccodec.c>"]
+}
