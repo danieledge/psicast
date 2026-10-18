@@ -11,7 +11,7 @@ Shows the **Psion Series 5mx**'s screen, live, in a web browser - on an iPhone, 
 - **Type on phone** (Shift+Ctrl+B): the Psion's keyboard types into the phone, with the Atom as its Bluetooth keyboard.
 - It can go on sharing after PsiCast has closed, and stops by itself when the batteries are low.
 
-**Status: in daily use** on a 5mx and an AtomS3R, with an iPhone's Safari (as a Home Screen app) watching. It also runs in a 5mx emulator end to end, with a stand-in for the Atom (see *Testing*).
+**Status: early beta.** Tested only on a Psion Series 5mx, with an AtomS3R and an iPhone's Safari (as a Home Screen app) watching; expect rough edges. It also runs in a 5mx emulator end to end, with a stand-in for the Atom (see *Testing*).
 
 PsiCast is part of the [PsiTerm suite](https://github.com/danieledge/psiterm) (PsiTerm, PsiMail, PsiWeb) and uses its networking and its Atom modem firmware.
 
