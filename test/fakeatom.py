@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""cast/test/fakeatom.py - the Atom's end of PsiCast's link A, for tests.
+"""test/fakeatom.py - the Atom's end of PsiCast's link A, for tests.
 
 Stands in for the Atom modem with PsiCast firmware: a Hayes modem on a unix
-socket (what the emulator's serial bridge connects to, see tools/emu/run.sh
+socket (what the emulator's serial bridge connects to, see core/tools/emu/run.sh
 EMU_SERIAL) or on a TCP port, which answers ATDT192.168.7.1:5961 with
 CONNECT and then speaks link A (cast/docs/PROTOCOL.md): WELCOME (with the
 viewer's address if --url), VIEWERS, ACKs, PINGs (with the last update

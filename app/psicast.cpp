@@ -1883,7 +1883,7 @@ void CCsAppUi::HandleCommandL(TInt aCommand)
 	case ECsCmdDisconnect:
 		{
 		// the Psion Internet connection down, even when "Stay connected"
-		// holds it (ssh/pglinktest.cpp; ends psihold.exe). Sharing stops
+		// holds it (core/ssh/pglinktest.cpp; ends psihold.exe). Sharing stops
 		// first, or it would only dial again.
 		TPsiLink link;
 		link.SetDefaults();

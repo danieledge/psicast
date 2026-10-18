@@ -1,13 +1,14 @@
-# Host tests for the PsiCast screen codec (cast/codec).
+# Host tests for the PsiCast screen codec (codec/).
 #
-#   make -C cast/test test      round trip and decoder fuzz, under ASan/UBSan
-#   make -C cast/test bench     the benchmark (frames from bench.py)
+#   make -C test test      round trip and decoder fuzz, under ASan/UBSan
+#   make -C test bench     the benchmark (frames from bench.py)
 #
-# Objects go to build/cast-test at the top of the checkout.
+# Objects go to build/cast-test at the top of the checkout. zlib comes from
+# psion-core (core/, the submodule).
 
-TOP   := ../..
+TOP   := ..
 OUT   := $(TOP)/build/cast-test
-ZDIR  := $(TOP)/ssh/zlib
+ZDIR  := $(TOP)/core/ssh/zlib
 CDIR  := ../codec
 ZSRC  := adler32 crc32 deflate inflate inftrees inffast trees zutil
 CC    ?= gcc

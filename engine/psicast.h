@@ -24,7 +24,7 @@
 #ifndef PSI_SHARED_NAME
 #define PSI_SHARED_NAME "PsiCastShared"
 #endif
-#include "psishared.h"     /* ssh/ - PsiTerm's shared-memory layout */
+#include "psishared.h"     /* core/ssh/ - PsiTerm's shared-memory layout */
 
 #define CS_MAGIC        0x54534143u     /* 'CAST' */
 #define CS_LAYOUT       2               /* + 1 whenever this struct changes (2: the phone keyboard) */

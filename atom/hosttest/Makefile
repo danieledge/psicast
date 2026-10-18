@@ -1,5 +1,6 @@
 # Host tests for PsiCast on the Atom (the extension module in ../src), on the
-# firmware's own host-test harness (firmware/atom-modem/hosttest). MIT licence.
+# firmware's own host-test harness (psiconnect's hosttest/; the checkout is
+# looked for beside this one, or in $PSICONNECT). MIT licence.
 #   make test       test_cast (with the sanitizers): link A's framing and
 #                   session against a Psion played with the real encoder,
 #                   tokens, WebSocket, per-viewer merging (pixel-exact), the
@@ -21,7 +22,9 @@
 CXX ?= g++
 CC ?= gcc
 CXXFLAGS ?= -O1 -g -Wall -Wextra -Wno-unused-parameter -std=c++17
-FW = ../../../firmware/atom-modem
+FW ?= $(if $(PSICONNECT),$(PSICONNECT),$(abspath ../../../psiconnect))
+# (the picture decoders from this checkout's own psion-core)
+FW_IMG = ../../core/mail/engine/img
 include $(FW)/hosttest/sources.mk
 CODEC = ../../codec
 MOD = ../src

@@ -49,7 +49,7 @@
 #include "cs.h"
 #include "pccodec.h"
 #include "zlib.h"
-#include "../../web/engine/pwnet.h"
+#include "../core/web/engine/pwnet.h"
 
 extern PsiShared *pg_shared(void);
 extern int  pg_wait(int ms, int want_net, int want_kbd);

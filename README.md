@@ -34,7 +34,7 @@ Download the AtomS3R firmware from the [latest release](https://github.com/danie
 | [`psicast-atoms3r-factory.bin`](https://github.com/danieledge/psicast/releases/latest/download/psicast-atoms3r-factory.bin) | The **first** flash, over USB: the whole image (bootloader, partition table and firmware), written at `0x0` |
 | [`psicast-atoms3r-update.bin`](https://github.com/danieledge/psicast/releases/latest/download/psicast-atoms3r-update.bin) | **Updates** later, from the Atom's own web page (*System > Upload & flash*): the firmware alone |
 
-It is the PsiConnect modem firmware from [`firmware/atom-modem`](https://github.com/danieledge/psiterm/tree/dev/firmware/atom-modem) in the PsiTerm repository - the Hayes modem PsiTerm, PsiMail and PsiWeb use - with PsiCast's module (this repository's `atom/`) built in. So the one Atom is both the Psion's modem and its screen-sharing box, and PsiTerm and the others work with it as before.
+It is the [PsiConnect](https://github.com/danieledge/psiconnect) modem firmware - the Hayes modem PsiTerm, PsiMail and PsiWeb use - with PsiCast's module (this repository's `atom/`) built in. So the one Atom is both the Psion's modem and its screen-sharing box, and PsiTerm and the others work with it as before.
 
 **First flash (USB):** connect the AtomS3R to a computer with a USB-C cable. If it isn't seen, hold its button while plugging it in (the download mode). Then either
 
@@ -44,7 +44,7 @@ It is the PsiConnect modem firmware from [`firmware/atom-modem`](https://github.
 
 Unplug it and plug it into the RS232 base.
 
-**Wi-Fi and the web password:** with no network saved, the Atom starts an access point, `PsiConnect-xxxx`. Join it from the phone and the Atom's pages open: choose your network, *Join and save*, and set a **web password** (user `atom`): the viewer asks for it. The Atom shows its address on its screen. The firmware's own [README](https://github.com/danieledge/psiterm/tree/dev/firmware/atom-modem#first-set-up-wifi) has the details, and the AT commands (from PsiTerm's terminal) for doing it from the Psion.
+**Wi-Fi and the web password:** with no network saved, the Atom starts an access point, `PsiConnect-xxxx`. Join it from the phone and the Atom's pages open: choose your network, *Join and save*, and set a **web password** (user `atom`): the viewer asks for it. The Atom shows its address on its screen. The firmware's own [README](https://github.com/danieledge/psiconnect#first-set-up-wifi) has the details, and the AT commands (from PsiTerm's terminal) for doing it from the Psion.
 
 **Updates:** open the Atom's address in a browser, *System > Upload & flash*, and choose `psicast-atoms3r-update.bin`. The Atom tries the new firmware and goes back to the old one by itself if it doesn't start properly.
 
@@ -142,47 +142,49 @@ What stays grey: the contents of documents, photos and web pages (Modern's evenl
 PsiCast is two programs, like the others in the suite: `PsiCast.app`, the window and the settings, and `psicast.exe`, the engine, which runs only while sharing and talks to the app through a shared memory chunk (`engine/psicast.h`).
 
 - **Reading the screen:** the engine reads the LCD frame buffer directly (`UserSvr::ScreenInfo`; the 32 bytes before it are the LCD palette, whose first entry gives the depth). The depth follows the program in front: the System screen is 4 greys (2 bits a pixel), 16-grey programs 4 bits. At start the engine compares the frame buffer with the window server's own copy of the screen (`CWsScreenDevice::CopyScreenToBitmap`), to be sure of the pixel order and polarity; if the frame buffer can't be read, that copy is the slower fallback.
-- **Encoding:** `cast/codec` works out what changed (tiles, scrolling) and deflates it. The protocol to the Atom is in [`docs/PROTOCOL.md`](docs/PROTOCOL.md), the codec in [`docs/CODEC.md`](docs/CODEC.md). At most two updates are unacknowledged; changes made meanwhile are merged into the next, so the viewer always gets the newest picture, never a backlog.
+- **Encoding:** `codec/` works out what changed (tiles, scrolling) and deflates it. The protocol to the Atom is in [`docs/PROTOCOL.md`](docs/PROTOCOL.md), the codec in [`docs/CODEC.md`](docs/CODEC.md). At most two updates are unacknowledged; changes made meanwhile are merged into the next, so the viewer always gets the newest picture, never a backlog.
 - **Input:** `UserSvr::AddEvent`, the same raw events the digitiser and keyboard make, checked and rate-limited first.
 - The log is `psicast.log` in PsiCast's folder (`psicast.old` the run before).
 
 ## Building
 
-PsiCast builds inside a [PsiTerm](https://github.com/danieledge/psiterm) checkout (its `dev` branch), as `cast/`: it uses PsiTerm's networking (`ssh/`), its build environment and its emulator tools. The EPOC R5 SDK goes beside the checkout, as PsiTerm's [`docs/BUILDING.md`](https://github.com/danieledge/psiterm/blob/dev/docs/BUILDING.md) says.
+PsiCast carries the suite's shared code, [psion-core](https://github.com/danieledge/psion-core) (PsiTerm's networking, zlib, `psihold.exe`, the build environment and the emulator tools), as the git submodule `core/`. The EPOC R5 SDK goes beside the checkout, as psion-core's [`docs/BUILDING.md`](https://github.com/danieledge/psion-core/blob/dev/docs/BUILDING.md) says.
 
 ```
-git clone -b dev https://github.com/danieledge/psiterm.git
-cd psiterm
-git clone https://github.com/danieledge/psicast.git cast
-tools/docker/psibuild setup                # once: the build image and the SDK
-tools/docker/psibuild "cast/build.sh"      # cast/dist/PsiCast.sis
+git clone --recurse-submodules https://github.com/danieledge/psicast.git
+cd psicast
+core/tools/docker/psibuild setup           # once: the build image and the SDK
+core/tools/docker/psibuild "bash build.sh" # dist/PsiCast.sis
 ```
 
-**The Atom's firmware** with PsiCast in: link the module into the firmware's `ext/` folder, then build with PlatformIO (the firmware's build picks up any module linked there; `AM_EXT=0 pio run` builds it without):
+**The Atom's firmware** with PsiCast in: check out [psiconnect](https://github.com/danieledge/psiconnect) beside this checkout, link the module into its `ext/` folder, then build with PlatformIO (the firmware's build picks up any module linked there; `AM_EXT=0 pio run` builds it without):
 
 ```
-ln -s ../../../cast/atom firmware/atom-modem/ext/cast
-cd firmware/atom-modem
+git clone --recurse-submodules https://github.com/danieledge/psiconnect.git ../psiconnect
+cd ../psiconnect
+ln -s ../../psicast/atom ext/cast
 pio run -e atoms3r                         # .pio/build/atoms3r/firmware.bin
 pio run -e atoms3r -t upload               # or straight onto an Atom on USB
 ```
 
-`cast/build.sh` builds `psicast.exe` with `engine/engine.mk` and `PsiCast.app` with makmake in a project of its own, so its objects don't mix with the other programs' in the SDK's shared folders.
+`build.sh` builds `psicast.exe` with `engine/engine.mk` and `PsiCast.app` with makmake in a project of its own, so its objects don't mix with the other programs' in the SDK's shared folders.
 
 ## Testing
 
-Make a card with `node --experimental-strip-types tools/emu/mkcard.ts psicast`. The Atom's own firmware runs on a PC as `cast/atom/hosttest/hostmodem` (`make -C cast/atom/hosttest hostmodem`, the firmware's hostmodem with PsiCast in; run it with `HOSTMODEM_CAST=1`; the viewer page is then at `http://127.0.0.1:5980/screen`), and the emulator's serial bridge can dial it like the real Atom.
+`make -C test test` checks the codec on a PC; `make -C atom/hosttest test` runs the Atom side on the firmware's own host harness (it needs the psiconnect checkout beside this one, or `PSICONNECT=/path/to/it`).
 
-`test/fakeatom.py` is a simpler stand-in for the Atom's end of the link: a Hayes modem on a unix socket (or a TCP port) that answers `ATDT192.168.7.1:5961`, decodes every update with the real codec, writes the screen as PNG, and can send the viewer's input from a script. With the emulator's serial bridge (`tools/emu/run.sh`, `EMU_SERIAL`):
+Make a card with `node --experimental-strip-types core/tools/emu/mkcard.ts psicast`. The Atom's own firmware runs on a PC as `atom/hosttest/hostmodem` (`make -C atom/hosttest hostmodem`, the firmware's hostmodem with PsiCast in; run it with `HOSTMODEM_CAST=1`; the viewer page is then at `http://127.0.0.1:5980/screen`), and the emulator's serial bridge can dial it like the real Atom.
+
+`test/fakeatom.py` is a simpler stand-in for the Atom's end of the link: a Hayes modem on a unix socket (or a TCP port) that answers `ATDT192.168.7.1:5961`, decodes every update with the real codec, writes the screen as PNG, and can send the viewer's input from a script. With the emulator's serial bridge (`core/tools/emu/run.sh`, `EMU_SERIAL`):
 
 ```
-python3 cast/test/fakeatom.py --unix /tmp/psicast/sock --out build/cast-atom \
+python3 test/fakeatom.py --unix /tmp/psicast/sock --out build/cast-atom \
     --control --answer-status --sim-clock --input taps.txt &
-EMU_SERIAL=/tmp/psicast/sock tools/emu/run.sh cast \
+EMU_SERIAL=/tmp/psicast/sock core/tools/emu/run.sh cast \
     "50 22 40" "50.05 18 40" "50.2 71"          # Shift+Ctrl+G: start sharing
 ```
 
-`cast/test/emu/kbdtest.sh` types on the phone in the emulator: `fakeatom.py --kbd` plays an Atom with a phone keyboard (KBD 2, then 3), and the KEYS the Psion sends must be those in `cast/test/emu/kbd.expect` (letters, Shift and Fn symbols, Ctrl+letter and Ctrl+digit, Menu+Tab held, arrows, Fn+arrows, Enter, Esc, Del, Fn+Del, Shift+Del, Space, Menu alone, and Shift+Ctrl+B to leave).
+`test/emu/kbdtest.sh` types on the phone in the emulator: `fakeatom.py --kbd` plays an Atom with a phone keyboard (KBD 2, then 3), and the KEYS the Psion sends must be those in `test/emu/kbd.expect` (letters, Shift and Fn symbols, Ctrl+letter and Ctrl+digit, Menu+Tab held, arrows, Fn+arrows, Enter, Esc, Del, Fn+Del, Shift+Del, Space, Menu alone, and Shift+Ctrl+B to leave).
 
 The decoded screens match the emulator's own screenshots pixel for pixel, at 4 and 16 greys. `--answer-status` and `--sim-clock` are for the emulator, which runs many times faster than real time while the Psion is idle.
 

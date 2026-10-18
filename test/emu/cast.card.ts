@@ -1,6 +1,6 @@
-// PsiCast's card for the emulator, loaded by tools/emu/mkcard.ts from
-// tools/emu/local/ (a link to this file):
-//   node --experimental-strip-types tools/emu/mkcard.ts psicast [out.img]
+// PsiCast's card for the emulator, loaded by core/tools/emu/mkcard.ts from
+// this checkout's test/emu/ (REPO is this checkout):
+//   node --experimental-strip-types core/tools/emu/mkcard.ts psicast [out.img]
 export const cards = {
 	psicast: (c: any) => {
 		const P = c.pkg(c.REPO + 'build/cast-pkg/');

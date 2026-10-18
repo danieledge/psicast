@@ -142,7 +142,7 @@ The Psion's frame buffer copy (76,800 bytes) belongs to the caller.
 
 ### Bytes
 
-`make -C cast/test bench` (`bench.py`) builds the sequences and runs them.
+`make -C test bench` (`bench.py`) builds the sequences and runs them.
 The first frame is a keyframe; every later frame is one update. "Ratio" is
 the changed frames x 76,800 over the bytes sent. Moves are the MOVE ops in
 the whole sequence.
@@ -211,7 +211,7 @@ out of it took doc to 46,703 and list from 62,500 to 32,087.
 
 ### Time on the Psion
 
-`cast/test/arm/arm.mk` builds the encoder and deflate with the Psion's
+`test/arm/arm.mk` builds the encoder and deflate with the Psion's
 compiler and flags (gcc 3.0, `-O2 -mcpu=arm710`), and `armbench.py` runs
 that exact ARM code under unicorn on every sequence, counts the
 instructions of each update, and checks that the updates it made decode to
@@ -249,16 +249,16 @@ for a new screen.
 On the host (gcc; the tests are built with ASan and UBSan):
 
 ```
-make -C cast/test test        # round trip, decoder fuzz, both halves built alone
-make -C cast/test bench       # the tables above (python3 with Pillow)
-python3 cast/test/bench.py build/cast-test --sweep    # and the tuning table
+make -C test test        # round trip, decoder fuzz, both halves built alone
+make -C test bench       # the tables above (python3 with Pillow)
+python3 test/bench.py build/cast-test --sweep    # and the tuning table
 ```
 
 The ARM measurement (needs the psibuild image and unicorn, pefile):
 
 ```
-tools/docker/psibuild "make -f cast/test/arm/arm.mk"
-python3 cast/test/arm/armbench.py [--profile] [--stack] [--level N]
+core/tools/docker/psibuild "make -f test/arm/arm.mk"
+python3 test/arm/armbench.py [--profile] [--stack] [--level N]
 ```
 
 - `rt` (round trip): 9 runs, from 8 x 1 to 640 x 480, strides wider than

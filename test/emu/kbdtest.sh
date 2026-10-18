@@ -2,9 +2,10 @@
 # cast/test/emu/kbdtest.sh - Type on phone in the emulator, end to end: the
 # keys pressed on the 5mx reach fakeatom.py as the KEYS events in
 # kbd.expect. Needs the card (node --experimental-strip-types
-# tools/emu/mkcard.ts psicast) and the emulator's harness (tools/emu/README.md).
+# core/tools/emu/mkcard.ts psicast) and the emulator's harness
+# (core/tools/emu/README.md).
 #
-#   cast/test/emu/kbdtest.sh            # -> build/emu/castkbd/, PASS or FAIL
+#   test/emu/kbdtest.sh                 # -> build/emu/castkbd/, PASS or FAIL
 #
 # PsiCast is not sharing, so Shift+Ctrl+B connects for the keyboard only
 # (modem route: the serial bridge to fakeatom.py, which plays an Atom with a
@@ -12,18 +13,18 @@
 # Shift+Ctrl+B again, which leaves and hangs up.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
-REPO=$(cd "$HERE/../../.." && pwd)
+REPO=$(cd "$HERE/../.." && pwd)
 OUT=$REPO/build/emu/castkbd
 SOCK=/tmp/psicast-kbd/sock               # (a socket path must be short)
 mkdir -p /tmp/psicast-kbd "$OUT.atom"
 rm -f "$OUT.atom/atom.log"
-python3 "$REPO/cast/test/fakeatom.py" --unix "$SOCK" --out "$OUT.atom" --answer-status --sim-clock --ping 1 \
+python3 "$REPO/test/fakeatom.py" --unix "$SOCK" --out "$OUT.atom" --answer-status --sim-clock --ping 1 \
 	--kbd --pair-after 1 --expect-keys "$HERE/kbd.expect" > /dev/null 2>&1 &
 ATOM=$!
 trap 'kill $ATOM 2>/dev/null || true' EXIT
 sleep 1
 C="22 40"; S="18 40"; F="24 30"; M="148 60"     # Ctrl, Shift, Fn, Menu held
-EMU_SERIAL=$SOCK EMU_SECS=${EMU_SECS:-12} "$REPO/tools/emu/run.sh" castkbd \
+EMU_SERIAL=$SOCK EMU_SECS=${EMU_SECS:-12} "$REPO/core/tools/emu/run.sh" castkbd \
 	"50 $C" "50.05 $S" "50.2 66" \
 	"66 72" \
 	"67 $S" "67.1 73" \

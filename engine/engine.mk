@@ -1,16 +1,21 @@
 # psicast.exe, PsiCast's engine, for the Psion (gcc 3.0 Psion 98r2, ESTLIB).
-# Normally run by cast/build.sh, inside the psion-build container:
-#   make -f cast/engine/engine.mk PSION_SDK=...
+# Normally run by build.sh, inside the psion-build container, from the
+# checkout's root:
+#   make -f engine/engine.mk PSION_SDK=...
 #
-# csmain.c (link A of cast/docs/PROTOCOL.md), cskeys.c (typed characters as
+# csmain.c (link A of docs/PROTOCOL.md), cskeys.c (typed characters as
 # keys), csepoc.cpp (the chunk, the screen, input, power, main), the codec
-# (cast/codec/pccodec.c, encoder only), zlib's deflate side and crc32
-# (ssh/zlib), PsiWeb's single-connection layer (web/engine/pwnet.c, no TLS)
-# and PsiTerm's psiglue.cpp (the modem and Psion Internet).
+# (codec/pccodec.c, encoder only), and from psion-core (core/, the
+# submodule): zlib's deflate side and crc32 (core/ssh/zlib), PsiWeb's
+# single-connection layer (core/web/engine/pwnet.c, no TLS) and PsiTerm's
+# psiglue.cpp (the modem and Psion Internet).
 #
 #   CSEPOC_DEFS=...   extra defines for csepoc.cpp
-TOP     := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
-CAST    := $(TOP)/cast
+TOP     := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
+# (sources by paths relative to the root, so the built engine carries no
+# absolute path of this machine in __FILE__; the objects' folder is absolute)
+CAST    := .
+CORE    ?= core
 O       := $(TOP)/build/cast-epoc
 SDK     ?= $(PSION_SDK)
 E       := $(SDK)/epoc_cpp_sdk/epoc32
@@ -22,15 +27,15 @@ export TMP := /tmp/
 CC      := arm-pe-gcc
 ARCH    := -s -fomit-frame-pointer -O2 -fno-strict-aliasing -nostdinc -mcpu=arm710 -mapcs-32 -mshort-load-bytes -msoft-float
 DEFS    := -D__SYMBIAN32__ -D__PSISOFT32__ -D__GCC32__ -D__EPOC32__ -D__MARM__ -D__EXE__ -DNDEBUG
-LIBC    := -I$(TOP)/web/compat -I$(E)/include/libc -I$(E)/include
-CFLAGS  := $(ARCH) $(DEFS) -std=gnu99 -fno-builtin -w $(LIBC) -I$(TOP)/ssh -I$(TOP)/ssh/zlib -I$(CAST)/engine -I$(CAST)/codec -include $(TOP)/mail/compat/pmcompat.h
-ZFLAGS  := $(ARCH) $(DEFS) -DNO_GZIP -fno-builtin -w -I$(TOP)/web/compat $(LIBC)
-CXXFLAGS := $(ARCH) $(DEFS) -Wno-ctor-dtor-privacy -fcheck-new -fvtable-thunks -w -I$(CAST)/engine -I$(TOP)/ssh -I$(E)/include/libc -I$(E)/include
+LIBC    := -I$(CORE)/web/compat -I$(E)/include/libc -I$(E)/include
+CFLAGS  := $(ARCH) $(DEFS) -std=gnu99 -fno-builtin -w $(LIBC) -I$(CORE)/ssh -I$(CORE)/ssh/zlib -I$(CAST)/engine -I$(CAST)/codec -include $(CORE)/mail/compat/pmcompat.h
+ZFLAGS  := $(ARCH) $(DEFS) -DNO_GZIP -fno-builtin -w -I$(CORE)/web/compat $(LIBC)
+CXXFLAGS := $(ARCH) $(DEFS) -Wno-ctor-dtor-privacy -fcheck-new -fvtable-thunks -w -I$(CAST)/engine -I$(CORE)/ssh -I$(E)/include/libc -I$(E)/include
 LIBGCC  := $(SDK)/gcc-3.0-psion-98r2-9/lib/gcc-lib/arm-epoc-pe/3.0-psion-98r2/libgcc.a
 SYSLIBS := $(REL)/estlib.lib $(REL)/euser.lib $(REL)/c32.lib $(REL)/efsrv.lib $(REL)/esock.lib $(REL)/insock.lib \
 	$(REL)/nifman.lib $(REL)/ws32.lib $(REL)/fbscli.lib $(REL)/gdi.lib $(LIBGCC)
 OUT     := $(O)/psicast.exe
-HDRS    := $(CAST)/engine/psicast.h $(CAST)/engine/cs.h $(TOP)/ssh/psishared.h
+HDRS    := $(CAST)/engine/psicast.h $(CAST)/engine/cs.h $(CORE)/ssh/psishared.h
 
 Z_SRCS  := adler32 crc32 deflate trees zutil
 OBJS    := $(O)/csmain.o $(O)/cskeys.o $(O)/pccodec.o $(O)/pwnet.o $(O)/csepoc.o $(O)/psiglue.o $(O)/nsprintf.o \
@@ -38,7 +43,7 @@ OBJS    := $(O)/csmain.o $(O)/cskeys.o $(O)/pccodec.o $(O)/pwnet.o $(O)/csepoc.o
 
 all: $(OUT)
 
-$(O)/csmain.o: $(CAST)/engine/csmain.c $(HDRS) $(CAST)/codec/pccodec.h $(TOP)/web/engine/pwnet.h
+$(O)/csmain.o: $(CAST)/engine/csmain.c $(HDRS) $(CAST)/codec/pccodec.h $(CORE)/web/engine/pwnet.h
 	@mkdir -p $(dir $@)
 	$(CC) -c $(CFLAGS) $< -o $@
 $(O)/cskeys.o: $(CAST)/engine/cskeys.c $(HDRS)
@@ -47,19 +52,19 @@ $(O)/cskeys.o: $(CAST)/engine/cskeys.c $(HDRS)
 $(O)/pccodec.o: $(CAST)/codec/pccodec.c $(CAST)/codec/pccodec.h
 	@mkdir -p $(dir $@)
 	$(CC) -c $(CFLAGS) -DPC_NO_DECODER -DNO_GZIP $< -o $@
-$(O)/pwnet.o: $(TOP)/web/engine/pwnet.c $(TOP)/web/engine/pwnet.h $(TOP)/ssh/psishared.h
+$(O)/pwnet.o: $(CORE)/web/engine/pwnet.c $(CORE)/web/engine/pwnet.h $(CORE)/ssh/psishared.h
 	@mkdir -p $(dir $@)
 	$(CC) -c $(CFLAGS) -DPW_NO_TLS $< -o $@
 $(O)/csepoc.o: $(CAST)/engine/csepoc.cpp $(HDRS)
 	@mkdir -p $(dir $@)
 	$(CC) -c $(CXXFLAGS) $(CSEPOC_DEFS) $< -o $@
-$(O)/psiglue.o: $(TOP)/ssh/psiglue.cpp $(TOP)/ssh/psishared.h $(TOP)/ssh/psibell.h $(TOP)/ssh/psilink.h
+$(O)/psiglue.o: $(CORE)/ssh/psiglue.cpp $(CORE)/ssh/psishared.h $(CORE)/ssh/psibell.h $(CORE)/ssh/psilink.h
 	@mkdir -p $(dir $@)
 	$(CC) -c $(CXXFLAGS) '-DPSI_SHARED_NAME="PsiCastShared"' $< -o $@
-$(O)/nsprintf.o: $(TOP)/web/compat/nsprintf.c
+$(O)/nsprintf.o: $(CORE)/web/compat/nsprintf.c
 	@mkdir -p $(dir $@)
 	$(CC) -c $(ARCH) $(DEFS) -fno-builtin -w $(LIBC) $< -o $@
-$(O)/zlib/%.o: $(TOP)/ssh/zlib/%.c
+$(O)/zlib/%.o: $(CORE)/ssh/zlib/%.c
 	@mkdir -p $(dir $@)
 	$(CC) -c $(ZFLAGS) $< -o $@
 

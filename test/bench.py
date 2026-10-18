@@ -14,7 +14,7 @@ Synthetic sequences, built from the screenshots in docs/screenshots:
   menu     a menu opens, the highlight moves down, a dialog opens and closes
   switch   switching between apps (every frame a different screen)
 Real sequences, if the emulator has been run here (build/emu/NAME/s-*.png,
-one frame a simulated second; tools/emu/README.md): any listed in EMU that
+one frame a simulated second; core/tools/emu/README.md): any listed in EMU that
 exist, with repeated frames left out.
 
 --sweep also runs the tuning sweep (deflate level, moves, RLE, tile size).
@@ -67,7 +67,7 @@ def font(size, mono=False):
 def text_lines():
     """Ordinary prose and code, for documents and terminals."""
     lines = []
-    for p in ["README.md", "docs/BUILDING.md", "mail/README.md", "ssh/psiglue.cpp"]:
+    for p in ["README.md", "docs/PROTOCOL.md", "core/docs/BUILDING.md", "core/ssh/psiglue.cpp"]:
         try:
             lines += open(os.path.join(TOP, p), encoding="utf-8", errors="replace").read().splitlines()
         except OSError:

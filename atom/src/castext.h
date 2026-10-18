@@ -1,5 +1,5 @@
 // castext.h - PsiCast as an extension module of the Atom's firmware
-// (firmware/atom-modem/src/ext.h): the service (cast.h) and its sockets
+// (the psiconnect firmware's src/ext.h): the service (cast.h) and its sockets
 // (castnet.h) on the modem's hooks. Its setting, AT$CAST, is Settings2's
 // ext[0], stored inverted (0, an older record's spare byte, is on): the same
 // byte, at offset 442, that it was when PsiCast was in the firmware itself,

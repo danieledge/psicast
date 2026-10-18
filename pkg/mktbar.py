@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PsiCast's pictures (original pixel art, in the spirit of the Psion's
 own programs): the toolbar's, and the main view's three choices -> BMP
-files for bmconv, and app/csicons.h with their ids. As web/tools/mkicons.py.
+files for bmconv, and app/csicons.h with their ids. As PsiWeb's tools/mkicons.py.
 
     cast/pkg/mktbar.py OUTDIR HEADER
 

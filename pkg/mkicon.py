@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PsiCast icon: a Psion's open screen with the waves of it going out, in
 4 greys, at the three sizes the 5mx uses, written to PsiCast.aif with
-PsiTerm's AIF writer (tools/icon/aif.py).
+PsiTerm's AIF writer (core/tools/icon/aif.py).
 
 As the Psion's own icons: mostly white with black outlines and a grey
 shadow, and a mask that is black wherever the icon is drawn. The Extras
@@ -9,7 +9,7 @@ bar shows only the top 37 rows of the 48-pixel icon (the name is written
 over the rest), so the picture keeps to them."""
 import os, sys
 from PIL import Image, ImageDraw
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../tools/icon"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../core/tools/icon"))
 from aif import write_aif
 K, D, L, W = 0, 85, 170, 255
 

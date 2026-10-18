@@ -1,8 +1,8 @@
 # PsiCast on the Atom
 
 The Atom side of PsiCast: an extension module of the PsiConnect firmware
-(`firmware/atom-modem` in the public PsiTerm repository; its hooks are in
-`firmware/atom-modem/src/ext.h`). This directory is the module:
+([psiconnect](https://github.com/danieledge/psiconnect), its own repository;
+its hooks are in its `src/ext.h`). This directory is the module:
 
 - `module.json`: its sources, include directories, defines and libraries
   (per chip: NimBLE-Arduino and the core's USB library on the ESP32-S3), for
@@ -23,10 +23,11 @@ The Atom side of PsiCast: an extension module of the PsiConnect firmware
 ## Building it in
 
 The firmware builds it in when the module is linked into its `ext/`
-directory (git-ignored there):
+directory (git-ignored there). With the psiconnect checkout beside this one:
 
-    ln -s ../../../cast/atom firmware/atom-modem/ext/cast
-    cd firmware/atom-modem && pio run -e atoms3r     # "Extension module cast: ..." in the log
+    cd ../psiconnect
+    ln -s ../../psicast/atom ext/cast
+    pio run -e atoms3r                               # "Extension module cast: ..." in the log
 
 `AM_EXT=0 pio run ...` builds the plain firmware with the link in place, and
 `AM_EXT_DIRS=/path/to/cast/atom` works without the link. The setting
@@ -41,7 +42,7 @@ no `CAST`/`CASTV` lines in `AT$STAT?`, no `/screen` pages, and a dial to
 PsiCast on the Psion sends its screen to the Atom, and the Atom shows it,
 live, in a web browser: an iPhone in Safari first, any modern browser in
 fact. If the Psion allows it, the viewer can also tap and type on the
-Psion. The protocol is in `cast/docs/PROTOCOL.md`; the code is `cast/atom/src/`.
+Psion. The protocol is in `docs/PROTOCOL.md`; the code is `atom/src/`.
 
 - **The Psion's side** connects to `192.168.7.1:5961`, the Atom's own
   address: over the PPP link (an ordinary socket; other apps keep sharing the
@@ -166,9 +167,9 @@ build as it is: `USB.begin()` moves the PHY to the OTG controller. So:
 
 ## Testing
 
-    make -C cast/atom/hosttest test      # test_cast, test_iconmatch.js, the Modern packs' sides
-    make -C cast/atom/hosttest e2e       # test_cast_e2e.py
-    make -C cast/atom/hosttest shots     # cast_page_shot.py (Playwright)
+    make -C atom/hosttest test      # test_cast, test_iconmatch.js, the Modern packs' sides
+    make -C atom/hosttest e2e       # test_cast_e2e.py
+    make -C atom/hosttest shots     # cast_page_shot.py (Playwright)
 
 - `test_cast` (with the sanitizers) covers link A's framing (the
   CRC, resync after rubbish and a damaged message, a message too long for the
@@ -178,13 +179,13 @@ build as it is: `USB.begin()` moves the PHY to the OTG controller. So:
   BYE, a replaced connection), the tokens, the WebSocket handshake (RFC 6455's
   example) and frames, per-viewer tracking (a fast and a slow viewer through
   300 random changes and scrolls, both pixel-exact, the slow one sent far
-  less), the input rules and the modem route. `make -C cast/atom/hosttest e2e`
+  less), the input rules and the modem route. `make -C atom/hosttest e2e`
   runs `test_cast_e2e.py`: hostmodem with `HOSTMODEM_CAST=1`, a fake Psion on
   both routes and Python WebSocket viewers, pixel for pixel.
-  `make -C cast/atom/hosttest shots` (`cast_page_shot.py`) loads the real viewer page in
+  `make -C atom/hosttest shots` (`cast_page_shot.py`) loads the real viewer page in
   headless Chromium (Playwright) at iPhone sizes against the same set-up,
   checks its canvas pixel for pixel and a tap reaching the Psion, and saves
-  screenshots in `cast/atom/hosttest/screens/cast/`. `HOSTMODEM_CAST=1` also lets the
+  screenshots in `atom/hosttest/screens/cast/`. `HOSTMODEM_CAST=1` also lets the
   Psion emulator's PsiCast use hostmodem (see `hosttest/casthost.cpp`).
 - The keyboard's tests in `test_cast`: both layouts' tables (and every
   code: known keys only, no two characters on one stroke), KEYS (bad

@@ -19,7 +19,10 @@ const here = __dirname;
 const args = process.argv.slice(2);
 const opt = (name) => { const i = args.indexOf(name); return i >= 0 ? args.splice(i, 2)[1] : null; };
 const flag = (name) => { const i = args.indexOf(name); if (i >= 0) { args.splice(i, 1); return true; } return false; };
-const screensDir = opt("--screens") || path.join(here, "..", "..", "..", "build", "emu");
+// (the emulator's screenshots: this checkout's build/emu, else a psiterm checkout's beside it)
+const screensDir = opt("--screens") || process.env.PSION_SCREENS ||
+  [path.join(here, "..", "..", "build", "emu"), path.join(here, "..", "..", "..", "psiterm", "build", "emu")].find(d => fs.existsSync(d)) ||
+  path.join(here, "..", "..", "build", "emu");
 const previewDir = opt("--preview");
 const scan = flag("--scan");
 const allShots = flag("--all");          // every s-NNN.png too, not only end.png
