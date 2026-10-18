@@ -298,8 +298,9 @@ static int send_update(unsigned long aCapMs)
 {
 	int len = 0, key = g_s.need_key, r;
 	int hdr = g_s.stamp ? 16 : 12;
-	/* (a big change in pieces: the phone shows the top while the rest is
-	   still on its way, and the next piece is encoded while this one goes) */
+	/* (a big change in pieces: the next piece is encoded while this one
+	   goes, and the Atom shows the viewers the whole change once the last
+	   is in: flags bit2 below) */
 	int most = g_s.body_max < CHUNK_MAX ? g_s.body_max : CHUNK_MAX;
 	unsigned long crc;
 	r = pc_enc_frame(g_enc, g_frame, CS_STRIDE, key, g_tx + hdr, most, &len);
@@ -316,7 +317,9 @@ static int send_update(unsigned long aCapMs)
 	}
 	g_s.seq_sent++;
 	g_tx[0] = 'P'; g_tx[1] = 'C'; g_tx[2] = T_UPDATE;
-	g_tx[3] = (unsigned char)((key ? 1 : 0) | (g_s.stamp ? 2 : 0));
+	/* bit2: more of this change is still to come (the viewer waits for the
+	   rest and shows it all at once; an older Atom ignores the bit) */
+	g_tx[3] = (unsigned char)((key ? 1 : 0) | (g_s.stamp ? 2 : 0) | (pc_enc_pending(g_enc) ? 4 : 0));
 	put32(g_tx + 4, hdr - 8 + len);
 	put32(g_tx + 8, g_s.seq_sent);
 	if (g_s.stamp)

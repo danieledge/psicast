@@ -236,6 +236,7 @@ public:
 	static const uint32_t kSilenceMs = 20000;      // link A closed after this long with nothing from the Psion
 	static const uint32_t kPingMs = 5000;          // PING when nothing has gone to the Psion for this long
 	static const uint32_t kKeyRetryMs = 3000;      // KEYREQ again while no keyframe has come
+	static const uint32_t kHoldMaxMs = 1500;       // the longest a change in pieces is held back from the viewers
 	static const uint32_t kViewerIdleMs = 45000;   // a viewer that has sent nothing this long is closed
 	static const uint32_t kStatusMs = 1000;        // status JSON to the viewers at most this often
 	static const uint32_t kSyncMs = 5000;          // with stamps: PING (the clocks) at least this often, busy or not
@@ -298,6 +299,8 @@ private:
 	uint32_t iAckSeq;
 	bool iAckDue;
 	bool iAwaitKey;
+	bool iMore;                     // the last UPDATE said more of its change is to come (flags bit2)
+	uint32_t iMoreSinceMs;          // when the held change began
 	uint32_t iKeyReqMs;
 	uint32_t iLastSeq;
 	bool iHaveSeq;

@@ -160,7 +160,7 @@ class Psion:
             p += struct.pack("<II", self.clock(), token)
         self.send(frame(0x03, p))
 
-    def update(self, damage=False):
+    def update(self, damage=False, more=False):
         """Encode and send the screen as it is now (waits for room in the window)."""
         t0 = time.time()
         while self.seq - self.acked >= self.window:
@@ -178,7 +178,7 @@ class Psion:
         self.need_key = False
         self.seq += 1
         head = struct.pack("<I", self.seq) + (struct.pack("<I", cap) if self.stamp else b"")
-        f = bytearray(frame(0x02, head + out.raw[:n.value], key | (2 if self.stamp else 0)))
+        f = bytearray(frame(0x02, head + out.raw[:n.value], key | (2 if self.stamp else 0) | (4 if more else 0)))
         if damage:
             f[24 if self.stamp else 20] ^= 0x10
         self.send(bytes(f))
@@ -396,6 +396,23 @@ def session(psion, http, label):
         time.sleep(0.01)
     time.sleep(0.3)
     v.settle()
+    # a change in pieces (flags bit2): the viewer gets none of it until the last
+    rects = v.counts.get(2, 0)
+    psion.box(0, 20, 320, 100, 5)
+    psion.update(more=True)
+    t0 = time.time()
+    while time.time() - t0 < 0.4:
+        v.pump()
+        time.sleep(0.01)
+    check(v.counts.get(2, 0) == rects, label + ": a change with more to come is held back")
+    psion.box(320, 120, 320, 100, 9)
+    psion.update()
+    t0 = time.time()
+    while v.counts.get(2, 0) == rects and time.time() - t0 < 3:
+        v.pump()
+        time.sleep(0.01)
+    v.settle()
+    check(v.counts.get(2, 0) == rects + 1 and v.same(psion.fb), label + ": ...and shown whole, in one message, with its last piece")
     check(v.same(psion.fb), label + ": the fast viewer's picture is the Psion's")
     check(v.counts[3] > 5, label + ": scrolls went as SCROLL (%d)" % v.counts[3])
     slow.paused = False

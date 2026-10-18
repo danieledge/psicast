@@ -228,7 +228,7 @@ static void JsonSafe(const char* aIn, char* aOut, size_t aMax)
 Cast::Cast(Hal& aHal)
 	: iHal(aHal), iEnabled(false), iLinkId(0), iNextId(0), iRoute(0), iLinkEnding(false), iWelcomed(false),
 	  iRxBuf(0), iRxSize(0), iOutLen(0), iLastInMs(0), iLastOutMs(0), iPingSentMs(0), iRttMs(0), iPingToken(0),
-	  iPingWait(false), iAckSeq(0), iAckDue(false), iAwaitKey(true), iKeyReqMs(0), iLastSeq(0), iHaveSeq(false),
+	  iPingWait(false), iAckSeq(0), iAckDue(false), iAwaitKey(true), iMore(false), iMoreSinceMs(0), iKeyReqMs(0), iLastSeq(0), iHaveSeq(false),
 	  iUpdates(0), iDecodeErrors(0), iBytesIn(0), iRateBytes(0), iRateMark(0), iRateMarkMs(0), iUpdMark(0), iUps10(0),
 	  iCtlAllowed(false), iPaused(false), iInputCap(false), iBattery(255), iMains(255), iCpu10(65535), iPsionUps10(0),
 	  iFreeRam(0), iDigW(0), iDigH(0), iHaveStatus(false), iLastViewers(-1), iLastViewersCtl(-1), iInputN(0), iDec(0), iW(0), iH(0), iWsCur(0)
@@ -317,6 +317,7 @@ uint32_t Cast::LinkOpen(int aRoute)
 	iPingWait = false;
 	iAckDue = false;
 	iAwaitKey = true;
+	iMore = false;
 	iKeyReqMs = now;
 	iHaveSeq = false;
 	iInputN = 0;
@@ -405,6 +406,7 @@ size_t Cast::LinkIn(uint32_t aId, const uint8_t* aData, size_t aLen)
 		if (aId == iLinkId && iRx.Errors() != e0 && iWelcomed)
 			{
 			iAwaitKey = true;
+			iMore = false;
 			KeyReq();
 			}
 		if (!n)
@@ -465,6 +467,7 @@ void Cast::Ping()
 void Cast::KeyReq()
 	{
 	iAwaitKey = true;
+	iMore = false;
 	if (Send(ECastKeyReq, 0, 0))
 		iKeyReqMs = iHal.Millis();
 	}
@@ -583,6 +586,7 @@ void Cast::OnHello(const uint8_t* aP, uint32_t aN)
 	Send(ECastWelcome, p, n);
 	iWelcomed = true;
 	iAwaitKey = true;                         // (the Psion's first UPDATE is a keyframe)
+	iMore = false;
 	iKeyReqMs = iHal.Millis();
 	iHaveSeq = false;
 	SendViewers();
@@ -624,6 +628,11 @@ void Cast::OnUpdate(int aFlags, const uint8_t* aP, uint32_t aN)
 	int r = pc_dec_update(iDec, aP + head, (int)(aN - head), key ? 1 : 0, &Cast::OnScrollCb, &Cast::OnRectCb, this);
 	if (r == PC_OK)
 		{
+		// (a change in pieces: the viewers get it when the last piece is in)
+		bool more = (aFlags & 4) != 0;
+		if (more && !iMore)
+			iMoreSinceMs = iHal.Millis();
+		iMore = more;
 		iUpdates++;
 		if (key)
 			iAwaitKey = false;
@@ -633,6 +642,7 @@ void Cast::OnUpdate(int aFlags, const uint8_t* aP, uint32_t aN)
 	else
 		{
 		iDecodeErrors++;
+		iMore = false;
 		if (iDecodeErrors <= 3 || (iDecodeErrors % 50) == 0)
 			{
 			char m[80];
@@ -1309,6 +1319,8 @@ size_t Cast::ViewerOut(int aIdx, uint8_t* aOut, size_t aMax)
 		if (v.needStatus) { QueueStatus(v); continue; }
 		if (!Screen())
 			break;
+		if (iMore && iHal.Millis() - iMoreSinceMs < kHoldMaxMs)
+			break;                                // (the rest of the change is on its way)
 		if (v.needFull) { StartFull(v); continue; }
 		if (BuildRects(v))
 			continue;
