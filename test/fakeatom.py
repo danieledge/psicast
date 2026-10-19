@@ -436,7 +436,7 @@ def main():
     ap.add_argument('--out', default=os.path.join(REPO, 'build', 'cast-atom'))
     ap.add_argument('--viewers', type=int, default=1)
     ap.add_argument('--control', action='store_true')
-    ap.add_argument('--url', default='')
+    ap.add_argument('--url', default='http://192.168.1.40/screen')
     ap.add_argument('--keyreq-at', type=int, default=0)
     ap.add_argument('--input')
     ap.add_argument('--png-every', type=int, default=10)

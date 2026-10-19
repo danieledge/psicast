@@ -23,7 +23,7 @@
 #include "psilink.h"
 #include "pglinktest.h"
 
-_LIT(KVersion, "0.17");            // also pkg/psicast.pkg and atom/src/castext.h
+_LIT(KVersion, "0.18");            // also pkg/psicast.pkg and atom/src/castext.h
 _LIT(KEngineExe, "psicast.exe");
 _LIT(KIniFile, "C:\\System\\Apps\\PsiCast\\PsiCast.ini");
 _LIT(KAtomHost, "192.168.7.1");    // the Atom's own address (PROTOCOL.md link A)
@@ -1657,14 +1657,15 @@ void CCsAppUi::Tick()
 		{
 		// where to watch: the viewer's address from the Atom, without "http://"
 		TPtrC8 url(FromC(iShared->viewer_url, sizeof(iShared->viewer_url) - 1));
+		// (Left and Mid panic past the end: every length is checked first)
 		_LIT8(KHttp, "http://");
-		if (url.Left(KHttp().Length()) == KHttp)
+		if (url.Length() >= KHttp().Length() && url.Left(KHttp().Length()) == KHttp)
 			url.Set(url.Mid(KHttp().Length()));
 		if (url.Length())
 			{
 			TBuf<96> say(_L("Sharing - watch at "));
 			TBuf<64> u;
-			u.Copy(url.Left(u.MaxLength()));
+			u.Copy(url.Left(Min(url.Length(), u.MaxLength())));
 			say.Append(u);
 			Say(say);
 			}
