@@ -103,11 +103,12 @@ void CastExt::ScreenDraw(ExtPen& aPen, uint32_t aNowMs)
 	CastLcdDraw(aPen, v);
 	}
 
-// a viewer coming or going, the Psion arriving, control given or taken,
+// a viewer coming or going, the Psion arriving, control allowed, given or taken,
 // and the phone keyboard's state wake a dimmed screen
 uint32_t CastExt::ScreenNews() const
 	{
-	return (uint32_t)iCast->KbdState() << 12 | (uint32_t)iCast->Viewers() << 2 | (iCast->LinkUp() ? 2u : 0u) | (iCast->Controlled() ? 1u : 0u);
+	return (uint32_t)iCast->KbdState() << 12 | (uint32_t)iCast->Viewers() << 2 | (iCast->LinkUp() ? 2u : 0u) | (iCast->Controlled() ? 1u : 0u)
+		| (iCast->LinkUp() && iCast->ControlAllowed() ? 1u << 11 : 0u);
 	}
 
 bool CastExt::LedWanted(ExtLed& aOut) const

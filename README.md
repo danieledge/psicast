@@ -66,10 +66,10 @@ Open the Atom's address followed by `/screen` (for example `http://192.168.1.40/
 
 ## Using it
 
-1. Tap **Share only** on PsiCast's page to share for watching, or **Allow control** to share and let the viewer tap and type too (it asks first). Shift+Ctrl+G shares the way Preferences say. PsiCast connects to the Atom the way Tools > Connection settings says - the same settings as PsiTerm, PsiMail and PsiWeb - and says "Sharing the screen".
+1. Tap **Share screen** on PsiCast's page to share for watching, or **Allow control** to share and let the viewer tap and type too (it asks first). Shift+Ctrl+G shares the way Preferences say. PsiCast connects to the Atom the way Tools > Connection settings says - the same settings as PsiTerm, PsiMail and PsiWeb - and says where to watch, for example "Sharing - watch at 192.168.1.40/screen".
 2. On the phone, open the Atom's address followed by `/screen`, for example `http://192.168.1.40/screen`. The Atom shows its address on its own screen; PsiCast shows it too once the Atom has said. The page asks for the Atom's web password.
 3. Go to the program you want to show: tap **Back** (Shift+Ctrl+Y) to return to the one you used last.
-4. To stop, press Shift+Ctrl+E, or tap **Share only** while it is pressed in. Tapping **Allow control** while it is pressed in turns control off and goes on sharing.
+4. To stop, press Shift+Ctrl+E, or tap **Share screen** while it is pressed in. Tapping **Allow control** while it is pressed in turns control off and goes on sharing. A phone that is watching takes control by itself when you allow it, and its hand button gives it up.
 
 | Key | |
 |---|---|

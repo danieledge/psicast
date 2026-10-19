@@ -20,7 +20,7 @@ enum TCsCommandIds
 	ECsCmdHelp,
 	ECsCmdAbout,
 	ECsCmdKeyboard,             // Share > Type on phone (tick box, Shift+Ctrl+B; Type on phone on the page)
-	ECsCmdShareOnly,            // the page's Share only: shares with control off, or stops
+	ECsCmdShareOnly,            // the page's Share screen: starts or stops sharing
 	ECsCmdShareControl          // the page's Allow control: shares with control on (it asks first)
 	};
 

@@ -126,6 +126,8 @@ void CastLcdDraw(ExtPen& aPen, const CastLcdView& aV)
 		aPen.RoundBox(3, kCtlY, kW - 6, kCtlH, 5, amber);
 		aPen.Centre(EFaceBold, ExtPen::kText + 1, kCtlY + (kCtlH + ExtPen::kText + 1) / 2, kBlack, "Control: on");
 		}
+	else if (aV.allowed)
+		aPen.Centre(EFaceSans, ExtPen::kText, kFoot, white, "Control: allowed");
 	else
 		aPen.Centre(EFaceSans, ExtPen::kText, kFoot, grey, "Control: off");
 	}
@@ -171,6 +173,7 @@ void CastLcd::View(const Cast& aCast, uint32_t aNowMs, CastLcdView& aOut)
 	aOut.paused = aCast.Paused();
 	aOut.viewers = aCast.Viewers();
 	aOut.control = aCast.Controlled();
+	aOut.allowed = !aOut.control && aCast.LinkUp() && aCast.ControlAllowed();
 	// the delay: a new figure at most every kDelayMs (each change redraws)
 	uint32_t ms, most;
 	if (!aCast.LinkDelay(ms, most))

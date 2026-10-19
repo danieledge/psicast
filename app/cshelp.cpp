@@ -19,20 +19,21 @@ static const TCsHelpTopic KHelpTopics[] =
 	  "It needs the Atom with its PsiCast firmware, connected to the Psion the way "
 	  "Tools > Connection settings says (the same settings as PsiTerm, PsiMail and PsiWeb).\n"
 	  "\n"
-	  "PsiCast's page has three choices: Share only, Type on phone and Allow control. "
+	  "PsiCast's page has three choices: Share screen, Type on phone and Allow control. "
 	  "Tap one to use it, or move to it with the arrow keys and press Enter. Each says "
 	  "how it is now. The lines at the bottom say what to open on the phone and how "
 	  "fast the screen goes.\n"
 	  "\n"
-	  "To share the screen for watching, tap Share only. To share it and let the "
+	  "To share the screen for watching, tap Share screen. To share it and let the "
 	  "viewer tap and type too, tap Allow control (it asks first). Either one connects to "
-	  "the Atom and says \"Sharing the screen\"; Shift+Ctrl+G shares the way Preferences "
+	  "the Atom and says where to watch; Shift+Ctrl+G shares the way Preferences "
 	  "say. Then "
 	  "go to the program you want to show: tap Back (Shift+Ctrl+Y) to go back to the one "
 	  "you used last, or tap its icon.\n"
 	  "\n"
-	  "To stop, press Shift+Ctrl+E, or tap Share only while it is pressed in. "
-	  "Tapping Allow control while it is pressed in turns control off and goes on sharing." },
+	  "To stop, press Shift+Ctrl+E, or tap Share screen while it is pressed in. "
+	  "Tapping Allow control while it is pressed in turns control off and goes on sharing; "
+	  "a phone watching takes control by itself when you allow it." },
 
 	{ "Watching on the phone",
 	  "On the phone, join the same Wi-Fi network as the Atom and open its address in the "

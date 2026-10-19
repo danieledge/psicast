@@ -1,7 +1,7 @@
 // PSICAST.CPP - PsiCast.app: share the Psion's screen with a web browser.
 //
-// One view (CCsView), PsiCast's page: three big choices - Share only,
-// Type on phone, Allow control (which shares too) - each saying how it is now, and a status
+// One view (CCsView), PsiCast's page: three big choices - Share screen
+// (on or off), Type on phone, Allow control (which shares too) - each saying how it is now, and a status
 // strip with where to look on the phone and how fast it goes. They are
 // another way in to the Share menu's commands.
 // In the keyboard mode (Share > Type on phone) the view says how the typing
@@ -23,7 +23,7 @@
 #include "psilink.h"
 #include "pglinktest.h"
 
-_LIT(KVersion, "0.16");            // also cast/pkg/psicast.pkg
+_LIT(KVersion, "0.17");            // also pkg/psicast.pkg and atom/src/castext.h
 _LIT(KEngineExe, "psicast.exe");
 _LIT(KIniFile, "C:\\System\\Apps\\PsiCast\\PsiCast.ini");
 _LIT(KAtomHost, "192.168.7.1");    // the Atom's own address (PROTOCOL.md link A)
@@ -365,7 +365,7 @@ static TInt WrapText(const CFont* aFont, const TDesC& aText, TInt aWidth, TPtrC*
 // available: its words are grey (a tap still says why).
 void CCsView::DrawTile(CWindowGc& aGc, TInt aTile, TInt aLines) const
 	{
-	_LIT(KShare, "Share only");
+	_LIT(KShare, "Share screen");
 	_LIT(KType, "Type on phone");
 	_LIT(KControl, "Allow control");
 	const TDesC* names[ECsTileCount] = { &KShare, &KType, &KControl };
@@ -1373,7 +1373,7 @@ void CCsAppUi::TileState(TInt aTile, TDes& aText, TBool& aOn, TBool& aDimmed) co
 	switch (aTile)
 		{
 	case ECsTileShare:
-		aOn = Sharing() && !iSettings.iControl;
+		aOn = Sharing();
 		if (!aOn)
 			aText = _L("Not sharing");
 		else if (phase == CS_PHASE_STARTING || phase == CS_PHASE_CONNECTING)
@@ -1655,7 +1655,21 @@ void CCsAppUi::Tick()
 		}
 	if (phase == CS_PHASE_SHARING && !iSaidSharing && !iKbdOnly)
 		{
-		Say(_L("Sharing the screen"));
+		// where to watch: the viewer's address from the Atom, without "http://"
+		TPtrC8 url(FromC(iShared->viewer_url, sizeof(iShared->viewer_url) - 1));
+		_LIT8(KHttp, "http://");
+		if (url.Left(KHttp().Length()) == KHttp)
+			url.Set(url.Mid(KHttp().Length()));
+		if (url.Length())
+			{
+			TBuf<96> say(_L("Sharing - watch at "));
+			TBuf<64> u;
+			u.Copy(url.Left(u.MaxLength()));
+			say.Append(u);
+			Say(say);
+			}
+		else
+			Say(_L("Sharing the screen"));
 		iSaidSharing = ETrue;
 		}
 	if (phase != iLastPhase)
@@ -1858,16 +1872,11 @@ void CCsAppUi::HandleCommandL(TInt aCommand)
 	case ECsCmdControl:
 		ControlL(!iSettings.iControl);
 		break;
-	case ECsCmdShareOnly:                    // the page: watching only
-		if (Sharing() && !iSettings.iControl)
+	case ECsCmdShareOnly:                    // the page's Share screen: on or off
+		if (Sharing())
 			StopSharing();
 		else
-			{
-			if (iSettings.iControl)
-				ControlL(EFalse);
-			if (!Sharing())
-				StartSharingL();
-			}
+			StartSharingL();
 		break;
 	case ECsCmdShareControl:                 // the page: sharing, with control
 		if (Sharing() && iSettings.iControl)

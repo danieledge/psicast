@@ -48,6 +48,7 @@ struct CastLcdView
 	bool paused;                // ... but has paused
 	int viewers;
 	bool control;               // a viewer can tap and type on the Psion
+	bool allowed;               // the Psion allows control, but no viewer has taken it
 	bool haveDelay;
 	uint32_t delayMs;           // the picture delay, Psion -> Atom (held for kDelayMs)
 	int kbd;                    // the phone keyboard (TKbdState: shown when 2 or 3)

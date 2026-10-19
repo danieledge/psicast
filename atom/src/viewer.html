@@ -1060,6 +1060,7 @@ if (window.visualViewport) {
 let ws = null, retry = 0, retryTimer = 0, pingTimer = 0, alive = false, connGen = 0, lastHeard = 0;
 const SILENT_MS = 8000;                          // (the Atom sends status every second and answers every ping)
 let wantControl = store.get("control", false);
+let allowSeen = false;            // (the Psion allowed control at the last status)
 let st = {}, hello = {}, linkUp = false, gotBye = false, refusedWhy = "";
 let rttViewer = null, pingSent = 0, pingN = 0;
 let bytesIn = 0, rateIn = 0, rateMark = performance.now(), updates = 0, ups = 0;
@@ -1246,6 +1247,17 @@ function onStatus() {
     setLink(st.paused ? "wait" : "ok", st.paused ? "Paused" : "Live");
   }
   if (linkUp && !was && !haveScreen) veil("spin", "Waiting for the picture…", "");
+  // the Psion's Allow control is the go-ahead: take control at once (the hand
+  // gives it up again, until the Psion allows it afresh)
+  const allowNow = linkUp && !!st.control;
+  if (allowNow && !allowSeen && !wantControl) {
+    wantControl = true;
+    store.set("control", true);
+    toast("The Psion allowed control: taps and keys go to it");
+    if (alive) send({ t: "control", on: 1 });
+    setTimeout(fitFrame, 50);
+  }
+  allowSeen = allowNow;
   controlState();
   renderStatus();
 }
