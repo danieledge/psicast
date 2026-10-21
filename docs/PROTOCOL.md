@@ -217,7 +217,7 @@ Psion sends it what is typed over link A. Optional and negotiated:
 | Dir | Type | Name | Payload |
 |---|---|---|---|
 | Psion -> Atom | 0x06 | KEYS | 1 to 64 events of 4 bytes: u8 kind, u8 mods, u16 code |
-| Atom -> Psion | 0x87 | KBD | u8 state (0 off in the Atom's settings, or not available; 1 ready: the Psion is not in keyboard mode; 2 waiting for the phone: pair it in its Bluetooth settings the first time; 3 connected to the phone), u8 transport (0 none, 1 Bluetooth, 2 USB), u16 reserved, then the phone's name, UTF-8, if known (rest of payload, may be empty) |
+| Atom -> Psion | 0x87 | KBD | u8 state (0 off in the Atom's settings, or not available; 1 ready: the Psion is not in keyboard mode, or in it and the keyboard is starting; 2 waiting for the phone: pair it in its Bluetooth settings the first time; 3 connected to the phone), u8 transport (0 none, 1 Bluetooth, 2 USB), u8 why (with state 0: 0 off in the Atom's settings, 1 not enough memory, 2 it did not start, 3 the USB-C is a host, 4 not on this board; 0 with any other state), u8 reserved, then the phone's name, UTF-8, if known (rest of payload, may be empty) |
 
 `mods` uses the USB HID modifier bits: 0x01 Ctrl, 0x02 Shift, 0x04 Alt
 (Option), 0x08 GUI (Cmd). The kinds:
@@ -244,6 +244,19 @@ Psion sends it what is typed over link A. Optional and negotiated:
   keyboard only: it sends no UPDATEs, and STATUS says paused.
 - KBD states 2 and 3 are only seen in keyboard mode (between MODE 1 and
   MODE 0).
+- KBD's why was reserved (0) before: an older Atom always says 0, which a
+  Psion shows as "off in the Atom's settings", as it did. A Psion that does
+  not know a why shows "not available".
+- Keyboard mode and screen sharing are one or the other (the Bluetooth
+  keyboard needs the internal memory the viewers hold). While the Psion is
+  in keyboard mode and the Atom's phone keyboard is on, the Atom closes
+  every viewer (link B: a `bye` with `why`, then close code 4001), turns new
+  ones away (409), and sends VIEWERS 0, so the Psion sends no pictures. It
+  lets its screen copy go once the viewers have gone, and makes it again at
+  MODE 0 (or when link A closes); the first viewer then asks for a keyframe,
+  as ever. Short of memory at MODE 1 while the viewers go, the Atom says
+  KBD 1 (starting) for up to 5 s, tries again every second, and then says
+  KBD 0 with why 1.
 - The Psion's Menu key is Cmd (GUI) on the phone.
 - KEYS needs no viewer and no control: it is the Psion's own user typing.
   The Atom never sends these to a viewer, and never passes them back as
@@ -258,6 +271,13 @@ Atom's web UI at `http://<atom>/screen`.
   `GET /screen/token` (password-protected), which returns a random
   single-use token valid for 60 s; the WebSocket URL carries
   `?t=<token>`. No token, no connection.
+- **Refused:** `/screen/token` answers 403
+  `{"error":"PsiCast is off","why":"off"}` while PsiCast is off, and 409
+  `{"error":"The Psion is typing into a phone","why":"keyboard"}` while the
+  Psion is in keyboard mode (*The phone keyboard*). The WebSocket upgrade is
+  refused the same way: 409 (text: `the Psion is typing into a phone`), 403
+  for anything else. A viewer should try again now and then (every few
+  seconds): sharing comes back when the Psion leaves keyboard mode.
 - **Atom -> browser (binary):** `u8 type`, then:
   - 0x01 FULL: u16 width, u16 height, then width*height/2 bytes (the model
     above);
@@ -285,7 +305,12 @@ Atom's web UI at `http://<atom>/screen`.
     to this viewer (behind whatever was on its way to it). Picture latency is
     about `link` + `queue` + `view`/2, plus the wait before the Psion reads
     its screen;
-  - `{"t":"bye"}` (the Psion stopped sharing); `{"t":"pong","n":n}`.
+  - `{"t":"bye"}` (the Psion stopped sharing); `{"t":"pong","n":n}`;
+  - `{"t":"bye","why":"keyboard","text":"the Psion is typing into a phone"}`:
+    the Psion has gone into keyboard mode. The Atom then closes the
+    connection, close code **4001**, reason `the Psion is typing into a
+    phone`, and refuses new ones (409) until the Psion leaves it. A viewer
+    that does not take the close within 3 s has its socket closed anyway.
 - **Browser -> Atom (text, JSON):** `{"t":"pen","e":"down|move|up","x":..,"y":..}`,
   `{"t":"key","e":"down|up","sc":<EPOC scan code>}`,
   `{"t":"char","c":<character code>}`, `{"t":"control","on":0|1}` (take or
@@ -320,6 +345,15 @@ capability bit2, KEYS (0x06) and KBD (0x87). All optional: a Psion sends
 KEYS only to an Atom whose WELCOME set bit2, and an Atom sends KBD only
 after setting it; both ends already ignored capability bits and message
 types they did not know.
+
+## Keyboard mode and sharing (after PsiCast 0.20; still version 1)
+
+Keyboard mode and screen sharing are one or the other (*The phone
+keyboard*). New: KBD's why (byte 2, reserved before), KBD 1 while the
+keyboard starts in keyboard mode, link B's `bye` with `why`, close code
+4001, and the 409 answers. All backward compatible: an older Psion ignores
+byte 2 and shows KBD 0 as before; an older viewer page takes the `bye` as
+the Psion stopping, and the 409 as a refusal it tries again after.
 
 ## Changes from draft 1
 

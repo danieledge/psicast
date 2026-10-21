@@ -21,7 +21,8 @@ enum TCsCommandIds
 	ECsCmdAbout,
 	ECsCmdKeyboard,             // Share > Type on phone (tick box, Shift+Ctrl+B; Type on phone on the page)
 	ECsCmdShareOnly,            // the page's Share screen: starts or stops sharing
-	ECsCmdShareControl          // the page's Allow control: shares with control on (it asks first)
+	ECsCmdShareControl,         // the page's Allow control: shares with control on (it asks first)
+	ECsCmdKeepLog               // Tools > Keep a log (tick box, 0.20)
 	};
 
 enum TCsDialogIds

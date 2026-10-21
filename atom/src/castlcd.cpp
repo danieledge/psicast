@@ -156,7 +156,9 @@ bool CastLedFor(bool aEnabled, int aViewers, bool aControl, int aKbd, ExtLed& aO
 bool CastLcd::Wanted(const Cast& aCast)
 	{
 	int k = aCast.KbdState();
-	return aCast.Enabled() && (aCast.Viewers() > 0 || k == EKbdWaiting || k == EKbdTyping);
+	// (a viewer waiting with the Psion not sharing, such as a phone left on the
+	// viewer, does not take the screen: only a share that is up does)
+	return aCast.Enabled() && ((aCast.Viewers() > 0 && aCast.LinkUp()) || k == EKbdWaiting || k == EKbdTyping);
 	}
 
 void CastLcd::Free()

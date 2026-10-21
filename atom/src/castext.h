@@ -26,7 +26,7 @@ class CastExt : public Extension
 public:
 	CastExt() : iTakePart(true), iHal(0), iCast(0) {}
 	const char* Name() const override { return "PsiCast"; }
-	const char* Version() const override { return "0.18"; }   // (the Psion side's too: app/psicast.cpp)
+	const char* Version() const override { return "0.21"; }   // (the Psion side's too: app/psicast.cpp)
 	bool Begin(Hal& aHal) override;
 	void Use(Cast& aCast, Hal& aHal) { iCast = &aCast; iHal = &aHal; }   // (the tests: a service of their own)
 	Cast* Service() const { return iCast; }

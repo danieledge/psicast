@@ -152,10 +152,17 @@ void CastExt::Get(const char* aPath, const ExtQuery& aQuery, ExtReply& aR)
 		{
 		// {"t":"<token>","port":5962,"control":true}: single use, for 60 s; ?control=1 asks for control
 		bool control = strcmp(aQuery.Arg("control"), "1") == 0;
+		// refused: 409 while the Psion is typing into a phone (keyboard mode
+		// and sharing are one or the other: cast.h), 403 while PsiCast is off
 		char t[32];
+		if (iCast->Typing())
+			{
+			aR.Text(409, "application/json", "{\"error\":\"The Psion is typing into a phone\",\"why\":\"keyboard\"}", "no-store");
+			return;
+			}
 		if (!iCast->NewToken(control, t, sizeof(t)))
 			{
-			aR.Text(403, "application/json", "{\"error\":\"PsiCast is off\"}", "no-store");
+			aR.Text(403, "application/json", "{\"error\":\"PsiCast is off\",\"why\":\"off\"}", "no-store");
 			return;
 			}
 		char m[96];

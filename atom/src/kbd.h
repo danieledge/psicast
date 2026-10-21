@@ -8,6 +8,10 @@
 // and MODE 0): a phone with a keyboard connected hides its own on-screen
 // one. Everything is let go when link A closes, when the phone goes, on a
 // HOLD of 0 and on MODE 0.
+//   - Keyboard mode and screen sharing are one or the other (cast.h): the
+//     viewers are let go at MODE 1, so Bluetooth has the internal memory.
+//     Short of memory meanwhile, the keyboard says it is starting, and tries
+//     again every second (kStartMs); after that KBD says why (TKbdWhy).
 //   - CHAR: the character as the phone's layout makes it (kbdmap.h), the
 //     held modifiers and the event's Ctrl, Alt and Cmd added; Shift is
 //     exactly what the character needs. Each CHAR and KEY is a press and a
@@ -31,6 +35,9 @@ class Hal;
 // KBD's state and transport (PROTOCOL.md)
 enum TKbdState { EKbdOff = 0, EKbdReady = 1, EKbdWaiting = 2, EKbdTyping = 3 };
 enum TKbdVia { EKbdViaNone = 0, EKbdViaBt = 1, EKbdViaUsb = 2 };
+// why it is not available (KBD's byte 2 with state 0; 0: off in the
+// settings, or an older Atom that does not say)
+enum TKbdWhy { EKbdWhyNone = 0, EKbdWhyMemory = 1, EKbdWhyFailed = 2, EKbdWhyHost = 3, EKbdWhyBoard = 4 };
 // KEYS's kinds
 enum TKbdKind { EKbdChar = 1, EKbdKey = 2, EKbdHold = 3, EKbdMode = 4 };
 
@@ -40,8 +47,8 @@ class KbdLink
 public:
 	virtual ~KbdLink() {}
 	// it can be used now (built in, memory for it, the port free); else
-	// aWhy says why, in a few words
-	virtual bool Usable(char* aWhy, size_t aMax) = 0;
+	// aWhy says why, in a few words, and aCode as a TKbdWhy
+	virtual bool Usable(char* aWhy, size_t aMax, int& aCode) = 0;
 	// be a keyboard (advertise, or reconnect to the phone it is paired
 	// with; appear on USB), and stop being one (disconnect, stop
 	// advertising, leave USB)
@@ -83,6 +90,7 @@ public:
 	// KBD's fields now
 	int State() const;
 	int Via() const;                // (EKbdViaNone while off or not available)
+	int WhyCode() const;            // (a TKbdWhy while on but not available, else 0)
 	void Name(char* aOut, size_t aMax) const;
 	bool InMode() const { return iWantMode; }
 
@@ -102,6 +110,9 @@ public:
 	static const int kMaxEvents = 64;
 	static const size_t kQueue = 160;           // reports (two an event, four for a dead key)
 	static const int kPerPass = 16;             // reports offered to the link in a pass
+	// short of memory at MODE 1 (the viewers are still going: cast.h): it is
+	// tried again every second, and said to be starting for this long
+	static const uint32_t kStartMs = 5000;
 
 private:
 	KbdLink* Chosen() const { return iVia == EKbdViaUsb ? iUsb : iBt; }
@@ -124,11 +135,14 @@ private:
 	int iVia = EKbdViaBt;
 	int iLayout = EKbdBritish;
 	bool iWantMode = false;         // the Psion is in keyboard mode (MODE 1)
+	uint32_t iModeMs = 0;           // (when it came)
+	bool iSaidWhy = false;          // (not available: logged once a mode)
 	bool iReady = false;            // the phone was ready at the last look
 	uint8_t iHeld = 0;              // HOLD's modifiers
 	uint8_t iQ[kQueue][8];
 	size_t iQHead = 0, iQN = 0;
 	char iWhy[48];
+	int iWhyCode = EKbdWhyNone;
 	uint32_t iEvents = 0, iDropped = 0, iBad = 0;
 	};
 

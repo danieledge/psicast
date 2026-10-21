@@ -298,9 +298,12 @@ def main():
                 ps.update()
                 time.sleep(0.15)
             page.wait_for_timeout(600)
-            # control, with the key bar
-            page.click("#bControl")
+            # control, with the key bar (taken by itself when the Psion allows it,
+            # since 0.17: the button only if not)
             page.wait_for_timeout(1500)
+            if not page.evaluate("() => document.body.classList.contains('control')"):
+                page.click("#bControl")
+                page.wait_for_timeout(1500)
             page.screenshot(path=os.path.join(out, "3-control.png"))
             shots.append("3-control.png")
             box = page.locator("#screen").bounding_box()
@@ -443,6 +446,21 @@ def main():
             dims = page.evaluate("() => { const c = document.getElementById('screen'), r = c.getBoundingClientRect(); return [c.width, Math.round(r.width * devicePixelRatio)]; }")
             e2e.check(dims[0] == dims[1] and dims[0] > 640, "the screen is drawn at the phone's own resolution (%r)" % dims)
 
+            # no room beside the face on a phone on its side: the face fits the
+            # stage, and the round buttons float over its corner, fading after 3 s
+            fit = page.evaluate("() => { const d = document.getElementById('device').getBoundingClientRect(); return [d.width, d.height, innerWidth, innerHeight]; }")
+            e2e.check(fit[0] >= fit[2] - 2 or fit[1] >= fit[3] - 2, "landscape full screen: the face as big as the stage (%r)" % fit)
+            e2e.check(page.evaluate("() => document.body.classList.contains('btnfloat')"), "landscape full screen: the buttons float over the face")
+            page.wait_for_timeout(3400)
+            e2e.check(page.evaluate("() => document.body.classList.contains('btnhide')"), "the floating buttons fade after 3 s")
+            # a tap where they were brings them back: not to the Psion, and not a press
+            n0 = len(ps.inputs)
+            eb = page.evaluate("() => { const r = document.getElementById('exit').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }")
+            page.mouse.click(eb[0], eb[1])
+            page.wait_for_timeout(400)
+            e2e.check(not page.evaluate("() => document.body.classList.contains('btnhide')") and page.evaluate("() => document.body.classList.contains('immersive')")
+                      and len(ps.inputs) == n0, "a tap brings the buttons back, and goes no further (%r)" % ps.inputs[n0:])
+            page.wait_for_timeout(500)
             # paused on the Psion, then gone
             page.click("#exit")
             page.wait_for_timeout(400)

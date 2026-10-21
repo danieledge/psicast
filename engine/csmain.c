@@ -663,10 +663,12 @@ static void handle(int type, const unsigned char *p, int n, unsigned long now)
 		if (n < 4)
 			return;
 		phone_name(p + 4, n - 4, name, sizeof(name));
-		if (S()->kbd_state != p[0] || S()->kbd_transport != p[1] || strcmp(name, S()->phone)) {
-			cs_log("cast: KBD %d, transport %d%s%s", p[0], p[1], name[0] ? ", phone " : "", name);
+		/* (byte 2: why it is not available, with state 0; an older Atom's 0) */
+		if (S()->kbd_state != p[0] || S()->kbd_transport != p[1] || S()->kbd_why != p[2] || strcmp(name, S()->phone)) {
+			cs_log("cast: KBD %d, transport %d, why %d%s%s", p[0], p[1], p[2], name[0] ? ", phone " : "", name);
 			S()->kbd_state = p[0] <= 3 ? p[0] : 0;
 			S()->kbd_transport = p[1] <= 2 ? p[1] : 0;
+			S()->kbd_why = S()->kbd_state == 0 ? p[2] : 0;
 			memcpy(S()->phone, name, sizeof(name));
 			S()->eng_seq++;
 		}
@@ -815,6 +817,7 @@ static int session(void)
 	S()->atom_kbd = -1;                   /* (until this Atom's WELCOME says) */
 	S()->kbd_state = -1;
 	S()->kbd_transport = 0;
+	S()->kbd_why = 0;
 	S()->phone[0] = 0;
 	S()->keys_tail = S()->keys_head;      /* (typed while not connected: dropped) */
 	S()->eng_seq++;

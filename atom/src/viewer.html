@@ -138,6 +138,13 @@ body.immersive #frame{position:absolute;left:var(--fl);top:var(--ft);width:var(-
   border-radius:50%;background:rgba(60,64,68,.6)}
 body.immersive.control #fkbd{display:grid;place-items:center}
 #fkbd svg{width:20px;height:20px;stroke:#fff;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+/* no room beside the face: the two round buttons float over its top right
+   corner, small and see-through, and fade after a few seconds untouched */
+#exit,#fkbd{transition:opacity .3s}
+body.btnfloat #exit,body.btnfloat #fkbd{width:30px;height:30px;background:rgba(40,44,48,.45)}
+body.btnfloat #exit svg{width:15px;height:15px}
+body.btnfloat #fkbd svg{width:17px;height:17px}
+body.btnfloat.btnhide #exit,body.btnfloat.btnhide #fkbd{opacity:0;pointer-events:none}
 @media (orientation:landscape) and (max-height:500px){
   header{padding:4px 10px 2px}
   .tool{width:34px;height:34px}
@@ -985,14 +992,20 @@ function findRoles(g, w, h, role, stack) {
 const toolMemo = { xt: -1, btns: [] };
 
 // the face is centred in the stage: the buttons go in the strip by an
-// iPhone's notch when it is on its side, else in the margin to the face's
-// right (stacked from the top) or below it (in a row)
-function placeButtons(st, dw, dh, side, inInset) {
+// iPhone's notch when it is on its side ("inset"), else in the margin to the
+// face's right (stacked from the top) or below it (in a row) when there is
+// one ("margin"), else over the face's top right corner ("float": small,
+// see-through, and gone after a while: btnsShow)
+function placeButtons(st, dw, dh, side, mode) {
   const r = st.getBoundingClientRect(), b = document.body.style;
-  if (inInset) {                                 // (top and bottom of the strip: the notch is in its middle)
+  if (mode === "inset") {                        // (top and bottom of the strip: the notch is in its middle)
     const x = r.right + (innerWidth - r.right - 38) / 2;
     b.setProperty("--bx1", x + "px"); b.setProperty("--by1", (r.top + 8) + "px");
     b.setProperty("--bx2", x + "px"); b.setProperty("--by2", (r.bottom - 46) + "px");
+  } else if (mode === "float") {
+    const fx = r.left + (r.width + dw) / 2, fy = r.top + (r.height - dh) / 2;
+    b.setProperty("--bx1", (fx - 36) + "px"); b.setProperty("--by1", (fy + 6) + "px");
+    b.setProperty("--bx2", (fx - 72) + "px"); b.setProperty("--by2", (fy + 6) + "px");
   } else if (side) {
     const x = r.left + (r.width + dw) / 2 + ((r.width - dw) / 2 - 38) / 2;
     b.setProperty("--bx1", x + "px"); b.setProperty("--by1", (r.top + 8) + "px");
@@ -1008,20 +1021,21 @@ function placeButtons(st, dw, dh, side, inInset) {
 function fitFrame() {
   const st = $("#stage"), fr = $("#frame");
   if (document.body.classList.contains("immersive")) {
-    // the whole 5mx face round the screen, all at one scale
-    // the two round buttons (leave, and the keyboard) go beside the face,
-    // never over it: in the margin the fit leaves, or one made for them
-    // (on the right in landscape, below in portrait)
+    // the whole 5mx face round the screen, all at one scale, as big as
+    // the stage allows. The two round buttons (leave, and the keyboard) go
+    // in the strip by an iPhone's notch, or in the margin the fit leaves
+    // (on the right in landscape, below in portrait); with no room for them
+    // there, they float over the face's corner (placeButtons)
     const F = FACE, dv = $("#device"), TW = F.l + W + F.r, TH = F.t + H + F.b, BTN = 46;
     const sw = st.clientWidth, sh = st.clientHeight, side = sw / sh > TW / TH;
     const inset = innerWidth - st.getBoundingClientRect().right;   // (an iPhone on its side: the strip by the notch)
-    let k = Math.min(sw / TW, sh / TH);
-    if (inset < BTN) {
-      if (side && sw - k * TW < 2 * BTN) k = Math.min((sw - 2 * BTN) / TW, sh / TH);
-      if (!side && sh - k * TH < 2 * BTN) k = Math.min(sw / TW, (sh - 2 * BTN) / TH);
-    }
-    k = Math.max(0.2, k);
-    placeButtons(st, k * TW, k * TH, side, inset >= BTN);
+    const k = Math.max(0.2, Math.min(sw / TW, sh / TH));
+    const room = side ? sw - k * TW : sh - k * TH;
+    const mode = inset >= BTN ? "inset" : room >= 2 * BTN ? "margin" : "float";
+    document.body.classList.toggle("btnfloat", mode === "float");
+    if (mode !== "float") document.body.classList.remove("btnhide");
+    placeButtons(st, k * TW, k * TH, side, mode);
+    btnsShow();
     const px = v => Math.round(v * k) + "px";
     dv.style.setProperty("--k", k);
     dv.style.setProperty("--dw", px(TW)); dv.style.setProperty("--dh", px(TH));
@@ -1037,6 +1051,36 @@ function fitFrame() {
   if (h > ah && ah > 50) { h = ah; w = h * W / H; }
   fr.style.width = Math.floor(w) + "px";
 }
+// The floating buttons: shown on any touch (or the mouse moving), gone
+// BTN_IDLE_MS after the last. A tap that brings them back where they appear
+// is theirs: it is not passed to the Psion, and does not press them either
+const BTN_IDLE_MS = 3000;
+let btnTimer = 0, btnShownAt = 0;
+function floating() { const c = document.body.classList; return c.contains("immersive") && c.contains("btnfloat"); }
+function btnsShow() {
+  const c = document.body.classList;
+  if (c.contains("btnhide")) { c.remove("btnhide"); btnShownAt = performance.now(); }
+  clearTimeout(btnTimer);
+  if (floating()) btnTimer = setTimeout(() => { if (floating()) c.add("btnhide"); }, BTN_IDLE_MS);
+}
+function inBtnZone(x, y) {
+  for (const id of ["#exit", "#fkbd"]) {
+    const el = $(id);
+    if (getComputedStyle(el).display === "none") continue;
+    const r = el.getBoundingClientRect();
+    if (x >= r.left - 8 && x <= r.right + 8 && y >= r.top - 8 && y <= r.bottom + 8) return true;
+  }
+  return false;
+}
+document.addEventListener("pointerdown", e => {
+  if (!floating()) return;
+  if (document.body.classList.contains("btnhide") && inBtnZone(e.clientX, e.clientY)) { e.preventDefault(); e.stopPropagation(); }
+  btnsShow();
+}, true);
+document.addEventListener("pointermove", e => { if (e.pointerType === "mouse" && floating()) btnsShow(); }, true);
+// (a press just after they came back is the tap that brought them)
+function btnTap(fn) { return e => { if (performance.now() - btnShownAt < 400) return; fn(e); }; }
+
 addEventListener("resize", fitFrame);
 if (window.ResizeObserver) new ResizeObserver(() => present()).observe(cv);
 addEventListener("orientationchange", () => setTimeout(fitFrame, 200));
@@ -1062,6 +1106,7 @@ const SILENT_MS = 8000;                          // (the Atom sends status every
 let wantControl = store.get("control", false);
 let allowSeen = false;            // (the Psion allowed control at the last status)
 let st = {}, hello = {}, linkUp = false, gotBye = false, refusedWhy = "";
+let typing = false;               // (the Psion is typing into a phone: no sharing until it stops)
 let rttViewer = null, pingSent = 0, pingN = 0;
 let bytesIn = 0, rateIn = 0, rateMark = performance.now(), updates = 0, ups = 0;
 
@@ -1091,8 +1136,10 @@ async function connect() {
   clearTimeout(retryTimer);
   const gen = ++connGen;
   dropSocket();
-  if (!haveScreen) veil("spin", retry ? "Reconnecting…" : "Connecting…", "");
-  setLink("wait", retry ? "Reconnecting" : "Connecting");
+  if (!typing) {
+    if (!haveScreen) veil("spin", retry ? "Reconnecting…" : "Connecting…", "");
+    setLink("wait", retry ? "Reconnecting" : "Connecting");
+  }
   let tok;
   try {
     // (always a token that may control: the Control button turns it on and off
@@ -1102,6 +1149,7 @@ async function connect() {
     if (r.status === 401) { veil("msg", "Sign in again", "The Atom asked for its web password.", ["Reload", () => location.reload()]); setLink("bad", "Not signed in"); return; }
     tok = await r.json();
     if (gen !== connGen) return;
+    if (r.status === 409 || tok.why === "keyboard") { showTyping(); return schedule(4000); }
     if (!r.ok || !tok.t) {
       refusedWhy = tok.error || "PsiCast is not available";
       veil("msg", refusedWhy, "Turn PsiCast on in the Atom's settings (AT$CAST=1), then try again.", ["Try again", () => { retry = 0; connect(); }]);
@@ -1121,7 +1169,7 @@ async function connect() {
   lastHeard = Date.now();
   sock.onopen = () => {
     if (ws !== sock) return;
-    alive = true; retry = 0; gotBye = false;
+    alive = true; retry = 0; gotBye = false; typing = false;
     lastHeard = Date.now();
     send({ t: "control", on: wantControl ? 1 : 0 });
     clearInterval(pingTimer);
@@ -1139,10 +1187,19 @@ async function connect() {
     ws = null; alive = false;
     clearInterval(pingTimer);
     linkUp = false;
+    if (typing) { showTyping(); return schedule(4000); }   // (closed by the Atom: the Psion is typing; asked again now and then)
     if (haveScreen) { cv.style.opacity = .55; banner("Reconnecting…"); } else veil("spin", "Reconnecting…", "");
     setLink("bad", "Reconnecting");
     schedule();
   };
+}
+// keyboard mode on the Psion: the Atom lets the viewers go (its memory is the
+// Bluetooth keyboard's) and lets them back when the Psion stops typing
+function showTyping() {
+  typing = true;
+  const big = "The Psion is typing into a phone", small = "The picture comes back when it stops typing.";
+  if (haveScreen) { cv.style.opacity = .55; banner(big); veil(); } else veil("msg", big, small);
+  setLink("wait", "Typing on a phone");
 }
 function schedule(ms) {
   clearTimeout(retryTimer);
@@ -1225,7 +1282,7 @@ function onJson(s) {
   if (!m || typeof m !== "object") return;
   if (m.t === "pong") { if (m.n === pingN) rttViewer = Math.round(performance.now() - pingSent); return; }
   if (m.t === "hello") { hello = m; if (m.w && m.h) resize(m.w, m.h); showName(); return; }
-  if (m.t === "bye") { gotBye = true; return; }
+  if (m.t === "bye") { gotBye = true; if (m.why === "keyboard") showTyping(); return; }
   if (m.t === "status") { st = m; onStatus(); }
 }
 function showName() {
@@ -1501,7 +1558,7 @@ function layoutSilk(k) {
 // (a touch also asks again for the screen to stay awake, if it was let go:
 // iOS lets it go whenever the app is hidden, and wake() hears of that)
 document.addEventListener("pointerdown", () => { if (!lock && store.get("wake", true)) wake(true); }, true);
-$("#fkbd").onclick = () => { $("#kbd").focus(); toast("Type: it goes to the Psion"); };
+$("#fkbd").onclick = btnTap(() => { $("#kbd").focus(); toast("Type: it goes to the Psion"); });
 
 // the phone's keyboard: text as characters (the Psion finds the keys for them)
 const kbd = $("#kbd");
@@ -1670,12 +1727,12 @@ function enterFull(real) {
 }
 $("#bFull").onclick = () => enterFull(true);
 function fullNow() { return document.fullscreenElement || document.webkitFullscreenElement; }
-$("#exit").onclick = () => {
+$("#exit").onclick = btnTap(() => {
   document.body.classList.remove("immersive");
   if (fullNow() && document.exitFullscreen) document.exitFullscreen().catch(() => {});
   else if (fullNow() && document.webkitExitFullscreen) document.webkitExitFullscreen();
   setTimeout(fitFrame, 60);
-};
+});
 const leftFull = () => { if (!fullNow()) document.body.classList.remove("immersive"); setTimeout(fitFrame, 60); };
 document.addEventListener("fullscreenchange", leftFull);
 document.addEventListener("webkitfullscreenchange", leftFull);

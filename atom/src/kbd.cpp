@@ -34,26 +34,42 @@ void PhoneKbd::CheckUsable()
 	{
 	KbdLink* l = Chosen();
 	iWhy[0] = 0;
+	int code = EKbdWhyFailed;
 	if (!l)
+		{
 		snprintf(iWhy, sizeof(iWhy), "not on this board");
-	iUsable = l && (l == iCur || l->Usable(iWhy, sizeof(iWhy)));
+		code = EKbdWhyBoard;
+		}
+	iUsable = l && (l == iCur || l->Usable(iWhy, sizeof(iWhy), code));
+	iWhyCode = iUsable ? EKbdWhyNone : code ? code : EKbdWhyFailed;
 	iUsableMs = iHal.Millis();
 	}
 
 int PhoneKbd::State() const
 	{
-	if (!iOn || !iUsable)
+	if (!iOn)
 		return EKbdOff;
+	// (short of memory: while the Psion shares its screen, the viewers have
+	// it. Keyboard mode lets them go, so it is offered, and said to be
+	// starting for a few seconds while the memory comes back)
+	bool memory = !iUsable && iWhyCode == EKbdWhyMemory;
 	if (!iWantMode)
-		return EKbdReady;
+		return iUsable || memory ? EKbdReady : EKbdOff;
 	if (!iCur)
-		return EKbdOff;
+		return memory && iHal.Millis() - iModeMs < kStartMs ? EKbdReady : EKbdOff;
 	return iReady ? EKbdTyping : EKbdWaiting;
 	}
 
 int PhoneKbd::Via() const
 	{
 	return State() == EKbdOff ? EKbdViaNone : iVia;
+	}
+
+int PhoneKbd::WhyCode() const
+	{
+	if (!iOn || State() != EKbdOff)
+		return EKbdWhyNone;
+	return iWhyCode ? iWhyCode : EKbdWhyFailed;
 	}
 
 void PhoneKbd::Name(char* aOut, size_t aMax) const
@@ -93,11 +109,12 @@ void PhoneKbd::Reconcile()
 			CheckUsable();
 			if (iUsable)
 				want = Chosen();
-			else
+			else if (!iSaidWhy)
 				{
 				char m[80];
 				snprintf(m, sizeof(m), "Phone keyboard: not available (%s)", iWhy);
 				iHal.Log(m);
+				iSaidWhy = true;              // (it is tried again every second: said once)
 				}
 			}
 		}
@@ -236,6 +253,8 @@ void PhoneKbd::Event(int aKind, int aMods, unsigned aCode)
 			if (!iWantMode)
 				{
 				iWantMode = true;
+				iModeMs = iHal.Millis();
+				iSaidWhy = false;
 				Reconcile();
 				}
 			}
@@ -280,7 +299,13 @@ void PhoneKbd::Loop()
 		}
 	Flush();
 	if (now - iUsableMs >= 1000)
+		{
 		CheckUsable();
+		// (in keyboard mode, not started yet: memory may have come back, as
+		// the viewers went)
+		if (iOn && iWantMode && !iCur && iUsable)
+			Reconcile();
+		}
 	}
 
 } // namespace am

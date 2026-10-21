@@ -27,7 +27,7 @@
 #include "psishared.h"     /* core/ssh/ - PsiTerm's shared-memory layout */
 
 #define CS_MAGIC        0x54534143u     /* 'CAST' */
-#define CS_LAYOUT       2               /* + 1 whenever this struct changes (2: the phone keyboard) */
+#define CS_LAYOUT       5               /* + 1 whenever this struct changes (2: the phone keyboard; 5: PsiShared.log_on - 3 and 4 are taken on the branch fast) */
 
 /* the phone keyboard (PROTOCOL.md, PsiCast 0.12): the app turns the keys
    typed in its keyboard mode into KEYS events, 4 bytes each (kind, mods,
@@ -104,6 +104,7 @@ typedef struct
 	volatile int atom_kbd;             /* WELCOME bit2: -1 not known yet, 0 no phone keyboard, 1 has one */
 	volatile int kbd_state;            /* KBD: -1 not heard, 0 off, 1 ready, 2 waiting for the phone, 3 connected */
 	volatile int kbd_transport;        /* KBD: 0 none, 1 Bluetooth, 2 USB */
+	volatile int kbd_why;              /* KBD with state 0: 0 off in the Atom's settings (or an older Atom), 1 short of memory, 2 did not start, 3 the USB-C is a host, 4 not on this board */
 	volatile unsigned int keys_sent;   /* CHAR and KEY events sent (since the engine started) */
 	char phone[40];                    /* KBD: the phone's name (CP1252), if the Atom knows it */
 	volatile unsigned int eng_seq;     /* + 1 when anything above (but beat) changes */

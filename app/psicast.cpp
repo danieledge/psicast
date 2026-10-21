@@ -23,7 +23,7 @@
 #include "psilink.h"
 #include "pglinktest.h"
 
-_LIT(KVersion, "0.18");            // also pkg/psicast.pkg and atom/src/castext.h
+_LIT(KVersion, "0.21");            // also pkg/psicast.pkg and atom/src/castext.h
 _LIT(KEngineExe, "psicast.exe");
 _LIT(KIniFile, "C:\\System\\Apps\\PsiCast\\PsiCast.ini");
 _LIT(KAtomHost, "192.168.7.1");    // the Atom's own address (PROTOCOL.md link A)
@@ -34,6 +34,11 @@ const TInt KTickIdle = 1000000;
 const TUint KPauseKeyCode = 'w' - 'a' + 1;     // Shift+Ctrl+W: the key code Ctrl makes of W
 const TInt KKbdLeaveScan = 'B';                 // Shift+Ctrl+B: leaves the keyboard mode (never sent)
 _LIT(KNoPhoneKbd, "Not available - the Atom has no phone keyboard");
+// keyboard mode: once the phone is connected the screen counts down and goes
+// off (backlight off, contrast down: ER5 has no call to power the LCD down
+// with the Psion still running); Dial (Fn+Menu) turns it back on, or off
+const TInt KCountSecs = 5;
+_LIT(KScreenFile, "C:\\System\\Apps\\PsiCast\\Screen.ini");   // (the user's contrast and light while it is off)
 const TInt KBigTwips[3] = { 200, 250, 300 };
 const TInt KTextTwips[3] = { 150, 200, 250 };
 const TInt KSmallTwips[3] = { 120, 150, 200 };
@@ -167,7 +172,9 @@ void CCsView::HandlePointerEventL(const TPointerEvent& aEvent)
 	{
 	if (iUi.KbdMode())
 		{
-		if (aEvent.iType == TPointerEvent::EButton1Down && StopRect().Contains(aEvent.iPosition))
+		if (aEvent.iType == TPointerEvent::EButton1Down && (iUi.Blanked() || iUi.Countdown() >= 0))
+			iUi.ScreenOn();                      // (a tap on the count or the dark screen: the screen back, nothing else)
+		else if (aEvent.iType == TPointerEvent::EButton1Down && StopRect().Contains(aEvent.iPosition))
 			iUi.HandleCommandL(ECsCmdKeyboard);     // (the same as Shift+Ctrl+B: leaves)
 		iPressed = iDown = -1;
 		return;
@@ -648,7 +655,18 @@ void CCsView::DrawKeyboard(CWindowGc& aGc) const
 	else if (s->phase != CS_PHASE_SHARING)
 		t = _L("Waiting for the Atom...");
 	else if (s->kbd_state == 0)
-		t = _L("Off in the Atom's settings");
+		{
+		// (KBD's reason: 0 off in the settings, or an older Atom that does not say)
+		switch (s->kbd_why)
+			{
+		case 0: t = _L("Off in the Atom's settings"); break;
+		case 1: t = _L("Not available: the Atom is short of memory"); break;
+		case 2: t = _L("Not available: it did not start on the Atom"); break;
+		case 3: t = _L("Not available: the Atom's USB-C is a host"); break;
+		case 4: t = _L("Not available on this Atom"); break;
+		default: t = _L("Not available on the Atom"); break;
+			}
+		}
 	else if (s->kbd_state == 2)
 		{
 		t = _L("Waiting for the phone");
@@ -718,6 +736,45 @@ void CCsView::DrawKeyboard(CWindowGc& aGc) const
 	aGc.DrawText(_L("Stop typing"), stop, baseline, CGraphicsContext::ECenter);
 	}
 
+// Keyboard mode, the phone connected: the screen goes off soon, in digits
+// as big as the screen allows (drawn: ER5's fonts stop well short), and how
+// to have it back
+void CCsView::DrawCountdown(CWindowGc& aGc) const
+	{
+	TRect r = Rect();
+	aGc.SetPenColor(KRgbBlack);
+	aGc.UseFont(iBig);
+	TInt top = r.iTl.iY + 8, bottom = r.iBr.iY - 2 * (iText->HeightInPixels() + 4) - 6;
+	aGc.DrawText(_L("Screen off in"), TRect(r.iTl.iX, top, r.iBr.iX, top + iBig->HeightInPixels()),
+		iBig->AscentInPixels(), CGraphicsContext::ECenter);
+	top += iBig->HeightInPixels() + 10;
+	// the digit, seven segments: a top, b top right, c bottom right, d
+	// bottom, e bottom left, f top left, g middle
+	static const TUint8 KSegs[10] = { 0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7d, 0x07, 0x7f, 0x6f };
+	TInt n = iUi.Countdown();
+	TUint seg = KSegs[n < 0 ? 0 : n > 9 ? 9 : n];
+	TInt h = bottom - top, w = h * 11 / 20, t = h / 9, x = r.iTl.iX + (r.Width() - w) / 2, y = top, mid = y + (h - t) / 2;
+	TRect bars[7] = {
+		TRect(x + t, y, x + w - t, y + t), TRect(x + w - t, y + t, x + w, mid), TRect(x + w - t, mid + t, x + w, y + h - t),
+		TRect(x + t, y + h - t, x + w - t, y + h), TRect(x, mid + t, x + t, y + h - t), TRect(x, y + t, x + t, mid),
+		TRect(x + t, mid, x + w - t, mid + t) };
+	aGc.SetPenStyle(CGraphicsContext::ENullPen);
+	aGc.SetBrushStyle(CGraphicsContext::ESolidBrush);
+	aGc.SetBrushColor(KRgbBlack);
+	for (TInt i = 0; i < 7; i++)
+		if (seg & (1 << i))
+			aGc.DrawRect(bars[i]);
+	aGc.SetBrushStyle(CGraphicsContext::ENullBrush);
+	aGc.SetPenStyle(CGraphicsContext::ESolidPen);
+	aGc.UseFont(iText);
+	TInt line = iText->HeightInPixels() + 4;
+	aGc.DrawText(_L("Press Fn+Menu (Dial) to turn the screen back on"), TRect(r.iTl.iX, bottom + 6, r.iBr.iX, bottom + 6 + line),
+		iText->AscentInPixels(), CGraphicsContext::ECenter);
+	aGc.SetPenColor(KRgbDarkGray);
+	aGc.DrawText(_L("The keys still go to the phone"), TRect(r.iTl.iX, bottom + 6 + line, r.iBr.iX, bottom + 6 + 2 * line),
+		iText->AscentInPixels(), CGraphicsContext::ECenter);
+	}
+
 void CCsView::Draw(const TRect& aRect) const
 	{
 	CWindowGc& gc = SystemGc();
@@ -730,7 +787,14 @@ void CCsView::Draw(const TRect& aRect) const
 	gc.SetBrushStyle(CGraphicsContext::ENullBrush);
 
 	if (iUi.KbdMode())
-		DrawKeyboard(gc);
+		{
+		if (iUi.Blanked())
+			;                                // (the screen is off: white)
+		else if (iUi.Countdown() >= 0)
+			DrawCountdown(gc);
+		else
+			DrawKeyboard(gc);
+		}
 	else
 		{
 		// (only the parts asked for: a choice, or the strip, at a time)
@@ -830,7 +894,7 @@ TBool CCsConnDialog::OkToExitL(TInt aButtonId)
 	if (link.iKeepUp && link.iNetMode)
 		{
 		TFileName near(iEikonEnv->EikAppUi()->Application()->AppFullName());
-		PsiHoldStart(fs, near);
+		PsiHoldStart(fs, near, ((CCsAppUi*)iEikonEnv->EikAppUi())->LogOn());   // (its log only with ours)
 		}
 	return ETrue;
 	}
@@ -886,6 +950,8 @@ void CCsAppUi::ConstructL()
 	{
 	BaseConstructL();
 	iLastPhase = -1;
+	iCountdown = -1;
+	ScreenRecover();                         // (a PsiCast that stopped with the screen off: put it back)
 	LoadSettings();
 	TRAPD(pics, ToolbarPicturesL());
 	(void)pics;                              // (no PsiCast.mbm: words only)
@@ -949,6 +1015,7 @@ void CCsAppUi::LoadSettings()
 	iSettings.iBatteryStop = 1;
 	iSettings.iKeepOnClose = 0;
 	iSettings.iAtomKbd = 0;
+	iSettings.iKeepLog = 0;                  // (0.20) no log unless Tools > Keep a log is ticked
 	RFile f;
 	if (f.Open(iCoeEnv->FsSession(), KIniFile, EFileRead) != KErrNone)
 		return;
@@ -974,6 +1041,7 @@ void CCsAppUi::LoadSettings()
 		iSettings.iRate = 2;
 	if (iSettings.iAtomKbd < 0 || iSettings.iAtomKbd > 2)
 		iSettings.iAtomKbd = 0;
+	iSettings.iKeepLog = iSettings.iKeepLog ? 1 : 0;
 	}
 
 void CCsAppUi::SaveSettings()
@@ -1082,6 +1150,7 @@ void CCsAppUi::PassSettings()
 	iShared->kbd_mode = iKbdMode;
 	iShared->kbd_only = iKbdOnly;
 	iShared->kbd_hold = iKbdMode ? iHeld : 0;
+	iShared->net.log_on = LogOn() ? 1 : 0;   // (0.20) the engine's psicast.log: read at each line, so it follows at once
 	iShared->app_seq++;
 	Poke();
 	}
@@ -1464,6 +1533,9 @@ void CCsAppUi::KbdLeave(const TDesC& aSay)
 	{
 	if (!iKbdMode)
 		return;
+	iCountdown = -1;
+	iCountDone = EFalse;
+	ScreenOff(EFalse);                       // (the user's own contrast and light back)
 	iKbdMode = EFalse;
 	if (iKbdOnly && iEngineOn)
 		Stop(EFalse);                        // (MODE 0, then BYE and the hang-up)
@@ -1512,6 +1584,23 @@ void CCsAppUi::KbdKey(const TWsEvent& aEvent)
 	const TKeyEvent& k = *aEvent.Key();
 	TUint m = k.iModifiers;
 	TInt sc = k.iScanCode;
+	// Dial (Fn+Menu): the screen back on (or, on, off at once); never sent
+	if (sc == EStdKeyDial || k.iCode == EKeyDial || (sc == EStdKeyMenu && (m & EModifierFunc)))
+		{
+		if (aEvent.Type() == EEventKey)
+			{
+			if (iBlanked || iCountdown >= 0)
+				ScreenOn();                      // (no count again until the phone connects again)
+			else
+				{
+				ScreenOff(ETrue);
+				iCountDone = ETrue;
+				if (iView)
+					iView->DrawNow();
+				}
+			}
+		return;
+		}
 	if (aEvent.Type() != EEventKey)
 		{
 		TBool down = aEvent.Type() == EEventKeyDown;
@@ -1613,6 +1702,122 @@ void CCsAppUi::SetTickRate(TBool aFast)
 	iTimer->Start(t, t, TCallBack(TickCallback, this));
 	}
 
+// Keyboard mode: once the phone is connected, a count of KCountSecs, then
+// the screen off; the phone gone, it comes back (and counts again when the
+// phone is back). Called from Tick, every 250 ms while typing
+void CCsAppUi::ScreenTick()
+	{
+	const CsShared* s = iShared;
+	if (!s || s->phase != CS_PHASE_SHARING || s->kbd_state != 3)
+		{
+		if (iCountdown >= 0 || iBlanked)
+			{
+			iCountdown = -1;
+			ScreenOff(EFalse);
+			if (iView)
+				iView->DrawNow();
+			}
+		iCountDone = EFalse;
+		return;
+		}
+	if (iBlanked || iCountDone)
+		return;
+	TTime now;
+	now.HomeTime();
+	if (iCountdown < 0)
+		{
+		iCountEnd = now + TTimeIntervalSeconds(KCountSecs);
+		iCountdown = KCountSecs;
+		if (iView)
+			iView->DrawNow();
+		return;
+		}
+	if (now >= iCountEnd)
+		{
+		iCountdown = -1;
+		iCountDone = ETrue;
+		ScreenOff(ETrue);
+		if (iView)
+			iView->DrawNow();
+		return;
+		}
+	TTimeIntervalSeconds left;
+	iCountEnd.SecondsFrom(now, left);
+	TInt n = left.Int() + 1;
+	if (n > KCountSecs)
+		n = KCountSecs;
+	if (n != iCountdown)
+		{
+		iCountdown = n;
+		if (iView)
+			iView->DrawNow();
+		}
+	}
+
+// The screen off (the backlight off, the contrast at its lowest) or back to
+// the user's own. Theirs are kept in Screen.ini while it is off, so a
+// PsiCast that stops without putting them back (a panic, a kill from the
+// task list) puts them back at its next start (ScreenRecover)
+void CCsAppUi::ScreenOff(TBool aOff)
+	{
+	if (aOff == iBlanked)
+		return;
+	RFs& fs = iCoeEnv->FsSession();
+	if (aOff)
+		{
+		UserHal::DisplayContrast(iSavedContrast);
+		UserHal::BacklightOn(iSavedLight);
+		TBuf8<24> d;
+		d.Format(_L8("%d %d"), iSavedContrast, iSavedLight ? 1 : 0);
+		RFile f;
+		if (f.Replace(fs, KScreenFile, EFileWrite) == KErrNone)
+			{
+			f.Write(d);
+			f.Close();
+			}
+		UserHal::SetBacklightOn(EFalse);
+		UserHal::SetDisplayContrast(0);
+		iBlanked = ETrue;
+		}
+	else
+		{
+		UserHal::SetDisplayContrast(iSavedContrast);
+		UserHal::SetBacklightOn(iSavedLight);
+		fs.Delete(KScreenFile);
+		iBlanked = EFalse;
+		}
+	}
+
+void CCsAppUi::ScreenOn()
+	{
+	iCountdown = -1;
+	iCountDone = ETrue;
+	ScreenOff(EFalse);
+	if (iView)
+		iView->DrawNow();
+	}
+
+void CCsAppUi::ScreenRecover()
+	{
+	RFs& fs = iCoeEnv->FsSession();
+	RFile f;
+	if (f.Open(fs, KScreenFile, EFileRead) != KErrNone)
+		return;
+	TBuf8<24> d;
+	TInt err = f.Read(d);
+	f.Close();
+	TLex8 lex(d);
+	TInt contrast = 0, light = 0;
+	if (err == KErrNone && lex.Val(contrast) == KErrNone && contrast > 0)
+		{
+		lex.SkipSpace();
+		lex.Val(light);
+		UserHal::SetDisplayContrast(contrast);
+		UserHal::SetBacklightOn(light != 0);
+		}
+	fs.Delete(KScreenFile);
+	}
+
 TInt CCsAppUi::TickCallback(TAny* aSelf)
 	{
 	// (a leave here, BusyMsgL's say, must not reach the scheduler: an error
@@ -1642,6 +1847,8 @@ void CCsAppUi::Tick()
 		KbdLeave(KNoPhoneKbd);
 		return;
 		}
+	if (iKbdMode)
+		ScreenTick();
 	// the busy message bottom left while it connects (in front only)
 	if (connecting && iForeground && !iBusyShown)
 		{
@@ -1924,6 +2131,13 @@ void CCsAppUi::HandleCommandL(TInt aCommand)
 			}
 		break;
 		}
+	case ECsCmdKeepLog:
+		// (0.20) off unless ticked; what is in psicast.log already stays
+		iSettings.iKeepLog = !iSettings.iKeepLog;
+		SaveSettings();
+		PassSettings();
+		Say(LogOn() ? _L("Keeping a log") : _L("Not keeping a log"));
+		break;
 	case ECsCmdHelp:
 		{
 		CCsHelpDialog* dlg = new(ELeave) CCsHelpDialog;
@@ -1974,6 +2188,7 @@ void CCsAppUi::DynInitMenuPaneL(TInt aMenuId, CEikMenuPane* aMenuPane)
 		link.SetDefaults();
 		link.Load(iCoeEnv->FsSession());
 		aMenuPane->SetItemDimmed(ECsCmdDisconnect, !link.iNetMode || !PgLinkUp());
+		aMenuPane->SetItemButtonState(ECsCmdKeepLog, LogOn() ? EEikMenuItemSymbolOn : EEikMenuItemSymbolIndeterminate);
 		break;
 		}
 		}

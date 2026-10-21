@@ -61,11 +61,18 @@ static void Prepare(int aFd)
 	}
 
 CastNet::CastNet()
-	: iViewSrv(-1), iViewLoop(false), iLinkSrv(-1), iLinkFd(-1), iLinkId(0), iLinkOutLen(0), iLinkOutPos(0)
+	: iViewSrv(-1), iViewLoop(false), iLinkSrv(-1), iLinkFd(-1), iLinkId(0), iLinkOut(0), iLinkOutLen(0), iLinkOutPos(0), iBuf(0)
 	{
 	iLinkAddr[0] = 0;
 	for (int i = 0; i < kConns; i++)
 		iConn[i] = 0;
+	}
+
+CastNet::~CastNet()
+	{
+	Stop();
+	CastFree(iLinkOut);
+	iLinkOut = iBuf = 0;
 	}
 
 int CastNet::Clients() const
@@ -83,7 +90,7 @@ void CastNet::Stop()
 		if (iConn[i])
 			{
 			close(iConn[i]->fd);
-			delete iConn[i];
+			CastFree(iConn[i]);
 			iConn[i] = 0;
 			}
 	if (iViewSrv >= 0)
@@ -100,6 +107,13 @@ void CastNet::Stop()
 
 void CastNet::Loop(Cast& aCast, Hal& aHal, bool aViewers, const char* aLinkAddr, bool aLoopback)
 	{
+	if (!iLinkOut)
+		{
+		iLinkOut = (uint8_t*)CastAlloc(2 * kBuf);
+		if (!iLinkOut)
+			return;                               // (no memory yet: the next pass)
+		iBuf = iLinkOut + kBuf;
+		}
 	// ----- link B: the viewers
 	if (aViewers && iViewSrv < 0)
 		{
@@ -131,7 +145,7 @@ void CastNet::Loop(Cast& aCast, Hal& aHal, bool aViewers, const char* aLinkAddr,
 			Serve(c, aCast, aHal);
 		if (c.fd < 0)
 			{
-			delete iConn[i];                      // (dropped: its memory back)
+			CastFree(iConn[i]);                   // (dropped: its memory back)
 			iConn[i] = 0;
 			}
 		}
@@ -150,7 +164,7 @@ void CastNet::Accept(Cast& aCast, Hal& aHal)
 		for (int i = 0; i < kConns && slot < 0; i++)
 			if (!iConn[i])
 				slot = i;
-		Conn* c = slot >= 0 ? new (std::nothrow) Conn : 0;
+		Conn* c = slot >= 0 ? (Conn*)CastAlloc(sizeof(Conn)) : 0;
 		if (!c)
 			{
 			close(fd);                            // (all in use, or no memory)
@@ -219,8 +233,11 @@ void CastNet::Handshake(Conn& aC, Cast& aCast, Hal& aHal)
 	int idx = aCast.ViewerOpen(token, why, sizeof(why));
 	if (idx < 0)
 		{
+		// (409: the Psion is typing into a phone, so no sharing for now; 403
+		// otherwise)
 		char m[200];
-		snprintf(m, sizeof(m), "HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n%s\n", why);
+		snprintf(m, sizeof(m), "HTTP/1.1 %s\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n%s\n",
+			idx == Cast::kTyping ? "409 Conflict" : "403 Forbidden", why);
 		Reply(aC, m);
 		aC.refusing = true;
 		char l[128];
@@ -263,7 +280,7 @@ void CastNet::Serve(Conn& aC, Cast& aCast, Hal& aHal)
 	// in: frames from the browser (small)
 	for (int k = 0; k < 4; k++)
 		{
-		int n = recv(aC.fd, iBuf, sizeof(iBuf), MSG_DONTWAIT);
+		int n = recv(aC.fd, iBuf, kBuf, MSG_DONTWAIT);
 		if (n == 0 || (n < 0 && !WouldBlock()))
 			{
 			Drop(aC, aCast);
@@ -291,7 +308,7 @@ void CastNet::Serve(Conn& aC, Cast& aCast, Hal& aHal)
 		aC.outPos = 0;
 		sent += n;
 		}
-	if (!aC.outLen && aCast.ViewerDone(aC.idx))
+	if ((!aC.outLen && aCast.ViewerDone(aC.idx)) || aCast.ViewerOverdue(aC.idx))
 		Drop(aC, aCast);
 	(void)aHal;
 	}
@@ -366,7 +383,7 @@ void CastNet::LinkLoop(Cast& aCast, Hal& aHal, const char* aAddr)
 	// in: everything the link takes (peeked first, so nothing it cannot take is lost)
 	for (int k = 0; k < 8; k++)
 		{
-		int n = recv(iLinkFd, iBuf, sizeof(iBuf), MSG_PEEK | MSG_DONTWAIT);
+		int n = recv(iLinkFd, iBuf, kBuf, MSG_PEEK | MSG_DONTWAIT);
 		if (n == 0 || (n < 0 && !WouldBlock()))
 			{
 			LinkDrop(aCast);
@@ -385,7 +402,7 @@ void CastNet::LinkLoop(Cast& aCast, Hal& aHal, const char* aAddr)
 		{
 		if (iLinkOutPos >= iLinkOutLen)
 			{
-			iLinkOutLen = aCast.LinkOut(iLinkId, iLinkOut, sizeof(iLinkOut));
+			iLinkOutLen = aCast.LinkOut(iLinkId, iLinkOut, kBuf);
 			iLinkOutPos = 0;
 			if (!iLinkOutLen)
 				break;

@@ -70,8 +70,8 @@ class CastLcd
 public:
 	CastLcd() {}
 	~CastLcd() { Free(); }
-	// the page is wanted over Home: PsiCast on, and someone watching or the
-	// Psion in keyboard mode
+	// the page is wanted over Home: PsiCast on, and someone watching while the
+	// Psion shares, or the Psion in keyboard mode
 	static bool Wanted(const Cast& aCast);
 	void View(const Cast& aCast, uint32_t aNowMs, CastLcdView& aOut);
 	void Free();                // (the page is gone: its picture's memory too)

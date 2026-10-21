@@ -59,19 +59,21 @@ class BleLink : public KbdLink, public NimBLEServerCallbacks, public NimBLEChara
 public:
 	explicit BleLink(Hal& aHal) : iHal(aHal) {}
 
-	bool Usable(char* aWhy, size_t aMax) override
+	bool Usable(char* aWhy, size_t aMax, int& aCode) override
 		{
 		if (iUp)
 			return true;
 		if (iFailed)
 			{
 			snprintf(aWhy, aMax, "Bluetooth did not start");
+			aCode = EKbdWhyFailed;
 			return false;
 			}
 		size_t free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 		if (free < kNeedFree)
 			{
 			snprintf(aWhy, aMax, "not enough memory for Bluetooth (%u KB)", (unsigned)(free / 1024));
+			aCode = EKbdWhyMemory;
 			return false;
 			}
 		return true;

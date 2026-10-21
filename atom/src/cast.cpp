@@ -8,6 +8,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <new>
+#if defined(ARDUINO) || defined(ESP_PLATFORM)
+#include <esp_heap_caps.h>
+#endif
 
 namespace am {
 
@@ -22,6 +25,25 @@ uint32_t CastCrc(const uint8_t* aData, size_t aLen)
 	{
 	return (uint32_t)crc32(0L, aData, (uInt)aLen);
 	}
+
+// (the core's malloc puts only blocks over 4 KB in PSRAM: a viewer's 4 KB
+// and its socket's 3 KB would otherwise sit in the internal heap)
+void* CastAlloc(size_t aLen)
+	{
+#if defined(ARDUINO) || defined(ESP_PLATFORM)
+	void* p = heap_caps_malloc(aLen, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+	if (p)
+		return p;
+#endif
+	return malloc(aLen);
+	}
+
+void CastFree(void* aP)
+	{
+	free(aP);                                 // (heap_caps_malloc's too)
+	}
+
+const char* const Cast::kTypingText = "the Psion is typing into a phone";
 
 size_t CastFrame(uint8_t* aOut, size_t aMax, int aType, int aFlags, const uint8_t* aPayload, size_t aLen)
 	{
@@ -243,7 +265,7 @@ Cast::~Cast()
 	{
 	for (int i = 0; i < kCastViewers; i++)
 		{
-		delete iView[i];
+		DeleteViewer(iView[i]);
 		iView[i] = 0;
 		}
 	iHal.BigFree(iRxBuf);
@@ -329,6 +351,8 @@ uint32_t Cast::LinkOpen(int aRoute)
 	iStamps = iSyncDue = iHaveOff = iHaveLat = false;
 	iLatSum = iLatN = iLatMax = 0;
 	iKbdCap = iKbdSent = false;
+	iTyping = false;
+	iTypW = iTypH = 0;
 	iRateMark = iBytesIn;
 	iRateMarkMs = now;
 	iUpdMark = iUpdates;
@@ -347,6 +371,12 @@ void Cast::LinkEnd(const char* aWhy)
 	if (iKbdCap && iKbd)
 		iKbd->LinkGone();                     // (the phone keyboard lets everything go, and stops)
 	iKbdCap = false;
+	if (iTyping)
+		{
+		iTyping = false;                      // (viewers may come again: the screen with the next HELLO)
+		iTypW = iTypH = 0;
+		iHal.Log("PsiCast: the Psion's keyboard mode ended with its link: viewers may connect again");
+		}
 	char m[120];
 	snprintf(m, sizeof(m), "PsiCast: the Psion's link ended: %s (%lu updates, %lu errors)", aWhy,
 		(unsigned long)iUpdates, (unsigned long)Errors());
@@ -504,6 +534,7 @@ void Cast::Handle(int aType, int aFlags, const uint8_t* aP, uint32_t aN)
 		if (iKbdCap)
 			{
 			iKbd->Keys(aP, aN);
+			CheckTyping();                    // (MODE 1: the viewers go now, for Bluetooth's memory)
 			SyncKbd();
 			}
 		break;
@@ -604,7 +635,7 @@ void Cast::OnHello(const uint8_t* aP, uint32_t aN)
 
 void Cast::OnUpdate(int aFlags, const uint8_t* aP, uint32_t aN)
 	{
-	if (aN < 4 || !iDec)
+	if (aN < 4)
 		return;
 	uint32_t seq = Le32(aP);
 	bool key = (aFlags & 1) != 0;
@@ -615,6 +646,15 @@ void Cast::OnUpdate(int aFlags, const uint8_t* aP, uint32_t aN)
 	bool gap = iHaveSeq && seq != iLastSeq + 1;
 	iLastSeq = seq;
 	iHaveSeq = true;
+	if (!iDec)
+		{
+		// (no screen: let go while the Psion typed. Taken and discarded, and a
+		// keyframe asked for when it is back)
+		iAwaitKey = true;
+		iMore = false;
+		Ping();
+		return;
+		}
 	if (!key && (iAwaitKey || gap))
 		{
 		if (gap && !iAwaitKey)
@@ -742,6 +782,7 @@ void Cast::FlushInput()
 void Cast::Tick()
 	{
 	uint32_t now = iHal.Millis();
+	CheckTyping();
 	if (iLinkId && !iLinkEnding)
 		{
 		if (now - iLastInMs >= kSilenceMs)
@@ -754,7 +795,7 @@ void Cast::Tick()
 				Ping();                           // (the clocks, while updates keep the link busy)
 			// (not while the Psion has paused: it sends nothing then, as when
 			// it connects for the phone keyboard only)
-			if (iAwaitKey && !iPaused && now - iKeyReqMs >= kKeyRetryMs)
+			if (iAwaitKey && !iPaused && !iTyping && iDec && now - iKeyReqMs >= kKeyRetryMs)
 				KeyReq();
 			FlushInput();
 			SyncKbd();
@@ -853,7 +894,8 @@ void Cast::SyncKbd()
 	uint8_t p[4 + sizeof(iKbdLastName)];
 	p[0] = (uint8_t)iKbd->State();
 	p[1] = (uint8_t)iKbd->Via();
-	p[2] = p[3] = 0;
+	p[2] = (uint8_t)iKbd->WhyCode();          // (with state 0: why; 0 off in the settings)
+	p[3] = 0;
 	char name[sizeof(iKbdLastName)];
 	iKbd->Name(name, sizeof(name));
 	if (iKbdSent && memcmp(p, iKbdLast, 4) == 0 && strcmp(name, iKbdLastName) == 0)
@@ -872,12 +914,92 @@ int Cast::KbdState() const
 	return iKbdCap && iKbd && LinkUp() && !iLinkEnding ? iKbd->State() : 0;
 	}
 
+bool Cast::Typing() const
+	{
+	return iKbdCap && iKbd && iKbd->On() && iKbd->InMode() && LinkUp() && !iLinkEnding;
+	}
+
+// Keyboard mode and screen sharing are one or the other (cast.h). As the
+// mode comes: every viewer told why and closed, the tokens dropped, and once
+// the viewers have gone the screen copy too (the decoder's internal memory;
+// VIEWERS 0 has stopped the Psion's pictures). As it goes: the screen made
+// again (blank until the keyframe the first viewer asks for), and viewers
+// let in
+void Cast::CheckTyping()
+	{
+	bool typing = Typing();
+	if (typing != iTyping)
+		{
+		iTyping = typing;
+		if (typing)
+			{
+			int n = 0;
+			for (int i = 0; i < kCastViewers; i++)
+				if (iView[i] && !iView[i]->closing)
+					{
+					Shut(*iView[i], kCloseTyping, kTypingText);
+					n++;
+					}
+			memset(iTokens, 0, sizeof(iTokens));
+			char m[100];
+			snprintf(m, sizeof(m), "PsiCast: the Psion is typing into a phone: no sharing meanwhile (%d viewer%s let go)", n, n == 1 ? "" : "s");
+			iHal.Log(m);
+			}
+		else
+			iHal.Log("PsiCast: the Psion has stopped typing into the phone: viewers may connect again");
+		}
+	if (iTyping && iDec)
+		{
+		bool any = false;
+		for (int i = 0; i < kCastViewers; i++)
+			any = any || iView[i] != 0;
+		if (!any)
+			{
+			iTypW = iW;
+			iTypH = iH;
+			FreeScreen();
+			}
+		}
+	else if (!iTyping && !iDec && iTypW && iWelcomed && !iLinkEnding && EnsureScreen(iTypW, iTypH))
+		{
+		// (a keyframe is needed: the first viewer asks for it, ViewersChanged)
+		iTypW = iTypH = 0;
+		iAwaitKey = true;
+		iMore = false;
+		}
+	}
+
+// a close we start: a bye saying why (PROTOCOL.md, link B), then the close
+// frame with its code and reason, after whatever is queued. A socket that
+// has not taken it all in kShutMaxMs is closed anyway (ViewerOverdue)
+void Cast::Shut(CastViewer& aV, int aCode, const char* aReason)
+	{
+	if (aV.closing)
+		return;
+	char m[120];
+	snprintf(m, sizeof(m), "{\"t\":\"bye\",\"why\":\"keyboard\",\"text\":\"%s\"}", aReason);
+	QueueText(aV, m);
+	uint8_t c[2 + 64];
+	size_t n = strlen(aReason);
+	if (n > sizeof(c) - 2)
+		n = sizeof(c) - 2;
+	c[0] = (uint8_t)(aCode >> 8);
+	c[1] = (uint8_t)aCode;
+	memcpy(c + 2, aReason, n);
+	QueueCtl(aV, EWsClose, c, 2 + n);
+	aV.closing = true;
+	uint32_t now = iHal.Millis();
+	aV.shutMs = now ? now : 1;
+	}
+
 void Cast::StateText(char* aOut, size_t aMax) const
 	{
 	if (!iEnabled)
 		snprintf(aOut, aMax, "off");
 	else if (!LinkUp())
 		snprintf(aOut, aMax, "on, waiting for the Psion; %d viewer%s", Viewers(), Viewers() == 1 ? "" : "s");
+	else if (iTyping)
+		snprintf(aOut, aMax, "\"%s\" is typing into a phone: no sharing meanwhile", iName);
 	else
 		snprintf(aOut, aMax, "sharing \"%s\" (%s), %d viewer%s%s", iName, iRoute == ERouteModem ? "modem route" : "PPP",
 			Viewers(), Viewers() == 1 ? "" : "s", iPaused ? ", paused" : "");
@@ -1338,11 +1460,19 @@ bool Cast::ViewerDone(int aIdx) const
 	return v.closing && !v.inType && v.smallPos >= v.smallLen;
 	}
 
+bool Cast::ViewerOverdue(int aIdx) const
+	{
+	if (aIdx < 0 || aIdx >= kCastViewers || !iView[aIdx])
+		return false;
+	const CastViewer& v = *iView[aIdx];
+	return v.closing && v.shutMs && iHal.Millis() - v.shutMs >= kShutMaxMs;
+	}
+
 // ----- link B: from a viewer --------------------------------------------------------------------
 
 bool Cast::NewToken(bool aControl, char* aOut, size_t aMax)
 	{
-	if (!iEnabled || aMax < sizeof(iTokens[0].text))
+	if (!iEnabled || Typing() || aMax < sizeof(iTokens[0].text))
 		return false;
 	uint32_t now = iHal.Millis();
 	size_t slot = 0;
@@ -1376,7 +1506,12 @@ int Cast::ViewerOpen(const char* aToken, char* aWhy, size_t aWhyMax)
 	if (!iEnabled)
 		{
 		snprintf(aWhy, aWhyMax, "PsiCast is off");
-		return -1;
+		return kRefused;
+		}
+	if (Typing())
+		{
+		snprintf(aWhy, aWhyMax, "%s", kTypingText);
+		return kTyping;
 		}
 	uint32_t now = iHal.Millis();
 	int t = -1;
@@ -1387,7 +1522,7 @@ int Cast::ViewerOpen(const char* aToken, char* aWhy, size_t aWhyMax)
 	if (t < 0)
 		{
 		snprintf(aWhy, aWhyMax, "no such token, or it has expired");
-		return -1;
+		return kRefused;
 		}
 	int slot = -1;
 	for (int i = 0; i < kCastViewers; i++)
@@ -1399,13 +1534,14 @@ int Cast::ViewerOpen(const char* aToken, char* aWhy, size_t aWhyMax)
 	if (slot < 0)
 		{
 		snprintf(aWhy, aWhyMax, "%d viewers already", kCastViewers);
-		return -1;
+		return kRefused;
 		}
-	CastViewer* v = new (std::nothrow) CastViewer();   // (value-initialised: all zero)
+	void* mem = CastAlloc(sizeof(CastViewer));
+	CastViewer* v = mem ? new (mem) CastViewer() : 0;   // (value-initialised: all zero)
 	if (!v)
 		{
 		snprintf(aWhy, aWhyMax, "not enough memory");
-		return -1;
+		return kRefused;
 		}
 	bool control = iTokens[t].control;
 	iTokens[t].text[0] = 0;                   // (single use)
@@ -1430,7 +1566,7 @@ void Cast::ViewerClose(int aIdx)
 	{
 	if (aIdx < 0 || aIdx >= kCastViewers || !iView[aIdx])
 		return;
-	delete iView[aIdx];
+	DeleteViewer(iView[aIdx]);
 	iView[aIdx] = 0;
 	char m[64];
 	snprintf(m, sizeof(m), "PsiCast: a viewer left (%d now)", Viewers());
@@ -1438,6 +1574,14 @@ void Cast::ViewerClose(int aIdx)
 	ViewersChanged();
 	if (!Viewers() && !iLinkId)
 		FreeScreen();
+	}
+
+void Cast::DeleteViewer(CastViewer* aV)
+	{
+	if (!aV)
+		return;
+	aV->~CastViewer();
+	CastFree(aV);
 	}
 
 int Cast::Viewers() const

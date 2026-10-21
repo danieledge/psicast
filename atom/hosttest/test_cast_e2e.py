@@ -240,6 +240,7 @@ class Viewer:
         self.h = H
         self.buf = b""
         self.texts = []
+        self.closes = []                # (close frames: code, reason)
         self.counts = {1: 0, 2: 0, 3: 0}
         self.bytes = 0
         self.last = time.time()
@@ -286,6 +287,8 @@ class Viewer:
             self.buf = self.buf[hl + ln:]
             if op == 1:
                 self.texts.append(json.loads(pl))
+            elif op == 8:
+                self.closes.append((struct.unpack(">H", pl[:2])[0] if len(pl) >= 2 else 0, pl[2:].decode()))
             elif op == 2:
                 self.binary(pl)
 
@@ -503,6 +506,61 @@ def keyboard(psion, http, logpath):
     time.sleep(0.3)
 
 
+def keyboard_share(psion, http):
+    # keyboard mode and screen sharing are one or the other: the viewers go
+    # at MODE 1 (a bye saying why, close 4001), none is let in (409), and
+    # they may come back at MODE 0
+    psion.hello(caps=3 | 8)
+    check(wait_for(lambda: psion.welcome is not None), "keyboard and sharing: WELCOME")
+    psion.box(0, 0, W, 18, 0)
+    psion.update()
+    v = Viewer(http)
+    check(v.ok and wait_for(lambda: psion.viewers[0] == 1), "keyboard and sharing: a viewer (%r)" % (psion.viewers,))
+    v.settle()
+    psion.keys([(4, 0, 1)])                                    # MODE 1
+    check(wait_for(lambda: psion.viewers[0] == 0), "keyboard and sharing: VIEWERS 0 at MODE 1 (%r)" % (psion.viewers,))
+    check(wait_for(lambda: (v.pump(), v.closes)[1]), "keyboard and sharing: the viewer closed")
+    byes = [t for t in v.texts if t.get("t") == "bye"]
+    check(byes and byes[-1].get("why") == "keyboard", "keyboard and sharing: its bye says why (%r)" % byes)
+    check(v.closes[:1] == [(4001, "the Psion is typing into a phone")], "keyboard and sharing: close 4001 (%r)" % v.closes)
+    sock_closed = False
+    t0 = time.time()
+    while time.time() - t0 < 3 and not sock_closed:
+        try:
+            sock_closed = v.sock.recv(1) == b""
+        except BlockingIOError:
+            time.sleep(0.02)
+        except OSError:
+            sock_closed = True
+    check(sock_closed, "keyboard and sharing: the socket closed by the Atom")
+    v.close()
+    try:
+        urllib.request.urlopen("http://127.0.0.1:%d/screen/token" % http)
+        code, body = 200, {}
+    except urllib.error.HTTPError as e:
+        code, body = e.code, json.loads(e.read() or b"{}")
+    check(code == 409 and body.get("why") == "keyboard", "keyboard and sharing: no token (%d %r)" % (code, body))
+    s1 = socket.create_connection(("127.0.0.1", v.port))
+    s1.sendall(("GET /cast?t=0123456789abcdef01234567 HTTP/1.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                "Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
+    first = s1.recv(300)
+    s1.close()
+    check(first.startswith(b"HTTP/1.1 409") and b"typing into a phone" in first, "keyboard and sharing: the WebSocket refused (%r)" % first[:60])
+    psion.keys([(4, 0, 0)])                                    # MODE 0
+    time.sleep(0.3)
+    k0 = psion.keyreqs
+    v = Viewer(http)
+    check(v.ok, "keyboard and sharing: a viewer again (%s)" % v.status_line)
+    check(wait_for(lambda: psion.viewers[0] == 1), "keyboard and sharing: VIEWERS 1")
+    check(wait_for(lambda: psion.keyreqs > k0), "keyboard and sharing: the first viewer asks for a keyframe")
+    psion.update()
+    v.settle()
+    check(v.counts[1] >= 1 and v.same(psion.fb), "keyboard and sharing: the picture again")
+    v.close()
+    psion.send(frame(0x04))                                     # BYE
+    time.sleep(0.3)
+
+
 def main():
     hm = os.path.join(HERE, "hostmodem")
     tmp = tempfile.mkdtemp()
@@ -546,6 +604,9 @@ def main():
         kb = socket.create_connection(("127.0.0.1", link))
         keyboard(Psion(kb, "Keys 5mx"), http, os.path.join(tmp, "hostmodem.log"))
         kb.close()
+        ks = socket.create_connection(("127.0.0.1", link))
+        keyboard_share(Psion(ks, "Shared 5mx"), http)
+        ks.close()
     finally:
         proc.terminate()
         proc.wait(3)

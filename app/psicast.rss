@@ -163,6 +163,7 @@ RESOURCE MENU_PANE r_cs_tools_menu
 		MENU_ITEM { command=ECsCmdPrefs; txt="Preferences..."; },
 		MENU_ITEM { command=ECsCmdConnSettings; txt="Connection settings..."; },
 		MENU_ITEM { command=ECsCmdDisconnect; txt="Disconnect"; flags=EEikMenuItemSeparatorAfter; },
+		MENU_ITEM { command=ECsCmdKeepLog; txt="Keep a log"; flags=EEikMenuItemCheckBox|EEikMenuItemSeparatorAfter; },
 		MENU_ITEM { command=ECsCmdHelp; txt="Help on PsiCast"; },
 		MENU_ITEM { command=ECsCmdAbout; txt="About PsiCast"; }
 		};

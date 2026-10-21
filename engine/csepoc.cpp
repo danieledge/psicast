@@ -76,6 +76,7 @@ static RFs& Fs()
 
 static RFile* gLog = 0;
 static TUint gLogT0 = 0;
+static TBool gLogTried = EFalse;            // (0.20) opened (or failed) since log_on went to 1
 
 static void LogOpen()
 	{
@@ -102,8 +103,31 @@ static void LogOpen()
 	gLogT0 = User::TickCount();
 	}
 
+// (0.20) Only while Tools > Keep a log is ticked (net.log_on, which the app
+// passes with its other settings): otherwise no file is made at all. Ticked
+// while sharing, the log starts there; unticked, it is closed.
+static void LogClose()
+	{
+	gLogTried = EFalse;
+	if (!gLog)
+		return;
+	gLog->Close();
+	delete gLog;
+	gLog = 0;
+	}
+
 extern "C" void cs_log(const char* aFmt, ...)
 	{
+	if (!gCs || !gCs->net.log_on)
+		{
+		LogClose();
+		return;
+		}
+	if (!gLog && !gLogTried)
+		{
+		gLogTried = ETrue;                   // (one try: a full disk does not cost a rename a line)
+		LogOpen();
+		}
 	if (!gLog)
 		return;
 	char text[160];
@@ -662,8 +686,7 @@ int main(int, char**)
 	// below every program, so the one in front never waits for a picture
 	RProcess().SetPriority(EPriorityLow);
 	Fs();
-	LogOpen();
-	pg_set_link_log(LinkLog);
+	pg_set_link_log(LinkLog);                // (cs_log opens psicast.log only with log_on)
 	{
 	TMemoryInfoV1Buf mi;
 	TInt freeRam = UserHal::MemoryInfo(mi) == KErrNone ? mi().iFreeRamInBytes : 0;
@@ -677,11 +700,7 @@ int main(int, char**)
 	WsClose();
 	pg_close();
 	s->state = PSI_STATE_EXITED;
-	if (gLog)
-		{
-		gLog->Close();
-		delete gLog;
-		}
+	LogClose();
 	if (gFs)
 		{
 		gFs->Close();

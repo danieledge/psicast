@@ -6,7 +6,7 @@
 &EN
 ; Two-digit versions (as the other programs): the EPOC installer compares
 ; major.minor only.
-#{"PsiCast"},(0x01000A92),0,18,0
+#{"PsiCast"},(0x01000A92),0,21,0
 "psicast.app"-"!:\System\Apps\PsiCast\PsiCast.app"
 "psicast.rsc"-"!:\System\Apps\PsiCast\PsiCast.rsc"
 "psicast.aif"-"!:\System\Apps\PsiCast\PsiCast.aif"

@@ -146,7 +146,7 @@ PsiCast is two programs, like the others in the suite: `PsiCast.app`, the window
 - **Reading the screen:** the engine reads the LCD frame buffer directly (`UserSvr::ScreenInfo`; the 32 bytes before it are the LCD palette, whose first entry gives the depth). The depth follows the program in front: the System screen is 4 greys (2 bits a pixel), 16-grey programs 4 bits. At start the engine compares the frame buffer with the window server's own copy of the screen (`CWsScreenDevice::CopyScreenToBitmap`), to be sure of the pixel order and polarity; if the frame buffer can't be read, that copy is the slower fallback.
 - **Encoding:** `codec/` works out what changed (tiles, scrolling) and deflates it. The protocol to the Atom is in [`docs/PROTOCOL.md`](docs/PROTOCOL.md), the codec in [`docs/CODEC.md`](docs/CODEC.md). At most two updates are unacknowledged; changes made meanwhile are merged into the next, so the viewer always gets the newest picture, never a backlog.
 - **Input:** `UserSvr::AddEvent`, the same raw events the digitiser and keyboard make, checked and rate-limited first.
-- The log is `psicast.log` in PsiCast's folder (`psicast.old` the run before).
+- PsiCast keeps no log unless Tools > Keep a log is ticked (it is off as standard, and after an upgrade). Then the log is `psicast.log` in PsiCast's folder (`psicast.old` the run before); untick it to stop (the log kept so far stays).
 
 ## Building
 

@@ -27,7 +27,7 @@ struct HostPhone : am::KbdLink
 	{
 	bool started = false;
 	uint32_t startedMs = 0;
-	bool Usable(char*, size_t) override { return true; }
+	bool Usable(char*, size_t, int&) override { return true; }
 	void Start() override { started = true; startedMs = NowMs(); fprintf(stderr, "\n[kbd phone: advertising]\n"); }
 	void Stop() override { started = false; fprintf(stderr, "\n[kbd phone: stopped]\n"); }
 	bool Ready() const override { return started && NowMs() - startedMs >= 200; }

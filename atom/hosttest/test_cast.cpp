@@ -213,11 +213,14 @@ struct ViewModel
 	int fulls = 0, rects = 0, scrolls = 0, partial = 0;
 	std::vector<std::string> texts;
 	std::vector<Bytes> pings;                    // (the Atom's WebSocket pings: their payloads)
+	std::vector<Bytes> closes;                   // (close frames: code and reason)
 	static void OnMsg(void* aCtx, int aOp, const uint8_t* aP, size_t aN)
 		{
 		ViewModel* self = (ViewModel*)aCtx;
 		if (aOp == am::EWsPing)
 			self->pings.push_back(Bytes(aP, aP + aN));
+		else if (aOp == am::EWsClose)
+			self->closes.push_back(Bytes(aP, aP + aN));
 		else if (aOp == am::EWsText)
 			self->texts.push_back(std::string((const char*)aP, aN));
 		else if (aOp == am::EWsBinary)
@@ -996,7 +999,7 @@ static void TestHooks()
 	// off (AT$CAST=0): no tokens, the dial refused, and the rows say so
 	type("AT$CAST=0\r");
 	run(100);
-	{ am::ExtReply r; ext.Get("/screen/token", q, r); CHECK(r.status == 403 && strcmp(r.text, "{\"error\":\"PsiCast is off\"}") == 0); }
+	{ am::ExtReply r; ext.Get("/screen/token", q, r); CHECK(r.status == 403 && strcmp(r.text, "{\"error\":\"PsiCast is off\",\"why\":\"off\"}") == 0); }
 	CHECK(ext.CallPageRow(true, row, sizeof(row)) && strcmp(row, "Off") == 0 && !ext.WebAction());
 	mark = hal.Wire().size();
 	type("AT$STAT?\r");
@@ -1027,7 +1030,7 @@ static void TestLcd()
 	for (int g : greys) used += g > 0;
 	CHECK(used >= 6 && greys[0] > 0);             // (a real screen: blacks and many greys)
 	int a = r.Viewer(false);
-	CHECK(a >= 0 && ext.ScreenWanted());          // (watching, the Psion not there yet)
+	CHECK(a >= 0 && !ext.ScreenWanted());         // (watching, the Psion not sharing: not over Home)
 	CHECK(ext.LedWanted(led) && led.style == am::EExtLedPulse && led.over == am::EExtLedOverCall && led.b > 0 && led.r == 0);
 	ext.iLcd.View(r.cast, r.hal.Millis(), v);
 	CHECK(!v.live && v.viewers == 1 && !v.control);
@@ -1121,7 +1124,16 @@ struct FakePhone : am::KbdLink
 	int starts = 0, stops = 0, forgets = 0;
 	int perPass = 1000, taken = 0;
 	std::vector<std::vector<uint8_t> > reports;
-	bool Usable(char* aWhy, size_t aMax) override { if (!usable) snprintf(aWhy, aMax, "no radio"); return usable; }
+	int why = am::EKbdWhyFailed;               // (what it says when not usable)
+	bool Usable(char* aWhy, size_t aMax, int& aCode) override
+		{
+		if (!usable)
+			{
+			snprintf(aWhy, aMax, why == am::EKbdWhyMemory ? "not enough memory" : "no radio");
+			aCode = why;
+			}
+		return usable;
+		}
 	void Start() override { started = true; starts++; }
 	void Stop() override { started = false; ready = false; stops++; }
 	bool Ready() const override { return started && ready; }
@@ -1578,13 +1590,169 @@ static void TestKbdHooks()
 	am::StatusModel::LayExt(ext, r.hal.Millis(), a);
 	CHECK(a.dropped == 0 && a.n < am::kDrawOps);
 	}
-	// a viewer with control: its quick blink wins
+	// no viewer is let in meanwhile (keyboard mode and sharing are one or
+	// the other): the light stays the keyboard's
 	r.ToAtom(Psion::Status(80, true));
-	int c = r.Viewer(true);
-	CHECK(c >= 0 && ext.LedWanted(led) && led.style == am::EExtLedBlink && led.periodMs == 400);
-	r.cast.ViewerClose(c);
+	char tk[32];
+	CHECK(!r.cast.NewToken(true, tk, sizeof(tk)) && ext.LedWanted(led) && led.style == am::EExtLedSteady);
 	r.ToAtom(Frame(am::ECastKeys, 0, Ev(am::EKbdMode, 0, 0)));
 	CHECK(!ext.ScreenWanted() && !ext.LedWanted(led));
+	}
+
+// keyboard mode and screen sharing: one or the other (cast.h)
+static void TestKbdShare()
+	{
+	KbdRig r;
+	Psion ps;
+	am::CastExt ext;
+	ext.Use(r.cast, r.hal);
+	TestQuery q;
+	r.id = r.cast.LinkOpen(am::Cast::ERouteTcp);
+	r.ToAtom(Psion::Hello(3 | 8));
+	ps.Box(0, 0, 640, 18, 0);
+	r.ToAtom(ps.Update(true));
+	int a = r.Viewer(), b = r.Viewer(true);
+	CHECK(a >= 0 && b >= 0 && r.cast.Viewers() == 2 && !r.cast.Typing());
+	ViewModel va, vb;
+	r.Pump(a, va);
+	r.Pump(b, vb);
+	CHECK(va.fulls == 1 && vb.fulls == 1);
+	r.Take();
+	// MODE 1: every viewer told why and closed (4001), VIEWERS 0 (the
+	// Psion's pictures stop), the keyboard started
+	r.ToAtom(Frame(am::ECastKeys, 0, Ev(am::EKbdMode, 0, 1)));
+	CHECK(r.cast.Typing() && r.cast.Viewers() == 0 && r.bt.started && r.hal.Logged("no sharing meanwhile (2 viewers let go)"));
+	r.Run(50);
+	std::vector<Msg> m = r.Take();
+	bool zero = false;
+	for (const Msg& x : m)
+		if (x.type == am::ECastViewers && x.p.size() == 2 && x.p[0] == 0)
+			zero = true;
+	CHECK(zero);
+	r.Pump(a, va);
+	r.Pump(b, vb);
+	for (ViewModel* v : { &va, &vb })
+		{
+		CHECK(!v->texts.empty() && v->texts.back() == "{\"t\":\"bye\",\"why\":\"keyboard\",\"text\":\"the Psion is typing into a phone\"}");
+		CHECK(v->closes.size() == 1 && v->closes[0].size() > 2 && v->closes[0][0] * 256 + v->closes[0][1] == am::Cast::kCloseTyping
+			&& std::string(v->closes[0].begin() + 2, v->closes[0].end()) == "the Psion is typing into a phone");
+		}
+	CHECK(r.cast.ViewerDone(a) && r.cast.ViewerDone(b));
+	// new ones turned away: no token (409, why "keyboard"), and the WebSocket
+	// refused with kTyping (castnet: 409)
+	{ am::ExtReply x; ext.Get("/screen/token", q, x); CHECK(x.status == 409 && strcmp(x.text, "{\"error\":\"The Psion is typing into a phone\",\"why\":\"keyboard\"}") == 0); }
+	char t[32], why[64];
+	CHECK(!r.cast.NewToken(false, t, sizeof(t)));
+	CHECK(r.cast.ViewerOpen("0123456789abcdef01234567", why, sizeof(why)) == am::Cast::kTyping && strcmp(why, "the Psion is typing into a phone") == 0);
+	char st[100];
+	r.cast.StateText(st, sizeof(st));
+	CHECK(strstr(st, "typing into a phone") != 0);
+	// the screen copy stays while the viewers' sockets close, then goes
+	CHECK(r.cast.Screen() != 0);
+	r.cast.ViewerClose(a);
+	r.cast.ViewerClose(b);
+	r.Run(50);
+	CHECK(r.cast.Screen() == 0);
+	// an UPDATE that was on its way: taken (ACK), not applied; no KEYREQ while typing
+	ps.Box(0, 100, 50, 10, 3);
+	r.ToAtom(ps.Update(false));
+	m = r.Take();
+	CHECK(Count(m, am::ECastAck) == 1 && r.cast.LinkAlive(r.id));
+	r.Run(7000);
+	m = r.Take();
+	CHECK(Count(m, am::ECastKeyReq) == 0 && r.cast.LinkAlive(r.id));
+	// typing into the phone, as ever
+	r.bt.ready = true;
+	r.Run(100);
+	r.bt.Take();
+	r.ToAtom(Frame(am::ECastKeys, 0, Chars("a")));
+	CHECK(r.bt.Take() == "0:04 0:00");
+	// MODE 0: the screen back; viewers let in again, the first asking for a keyframe
+	r.ToAtom(Frame(am::ECastKeys, 0, Ev(am::EKbdMode, 0, 0)));
+	CHECK(!r.cast.Typing() && !r.bt.started);
+	r.Run(50);
+	m = r.Take();
+	CHECK(r.cast.Screen() != 0 && r.hal.Logged("viewers may connect again"));
+	{ am::ExtReply x; ext.Get("/screen/token", q, x); CHECK(x.status == 200); }
+	int c = r.Viewer();
+	m = r.Take();
+	CHECK(c >= 0 && Count(m, am::ECastKeyReq) == 1);
+	r.ToAtom(ps.Update(true));
+	ViewModel vc;
+	r.Pump(c, vc);
+	CHECK(vc.fulls == 1 && vc.Same(r.cast.Screen()) && memcmp(r.cast.Screen(), ps.frame.data(), ps.frame.size()) == 0);
+	// a viewer that takes nothing (its socket full): closed after kShutMaxMs anyway
+	r.ToAtom(Frame(am::ECastKeys, 0, Ev(am::EKbdMode, 0, 1)));
+	CHECK(r.cast.Typing() && !r.cast.ViewerOverdue(c) && !r.cast.ViewerDone(c));
+	r.Run(am::Cast::kShutMaxMs + 100);
+	CHECK(r.cast.ViewerOverdue(c));
+	r.cast.ViewerClose(c);
+	// link A closing ends keyboard mode: viewers may come again
+	r.cast.LinkClose(r.id);
+	CHECK(!r.cast.Typing());
+	{ am::ExtReply x; ext.Get("/screen/token", q, x); CHECK(x.status == 200); }
+	// with the phone keyboard off in the settings, keyboard mode leaves the
+	// viewers be (no Bluetooth to make room for); turned on, they go
+	r.kbd.Configure(false, am::EKbdViaBt, am::EKbdBritish);
+	r.id = r.cast.LinkOpen(am::Cast::ERouteTcp);
+	r.ToAtom(Psion::Hello(3 | 8));
+	r.ToAtom(ps.Update(true));
+	c = r.Viewer();
+	r.ToAtom(Frame(am::ECastKeys, 0, Ev(am::EKbdMode, 0, 1)));
+	r.Run(100);
+	CHECK(c >= 0 && !r.cast.Typing() && r.cast.Viewers() == 1);
+	r.kbd.Configure(true, am::EKbdViaBt, am::EKbdBritish);
+	r.Run(100);
+	CHECK(r.cast.Typing() && r.cast.Viewers() == 0 && r.bt.started);
+	}
+
+// KBD's reason (byte 2) and the keyboard short of memory while viewers go
+static void TestKbdWhy()
+	{
+	KbdRig r;
+	r.bt.usable = false;
+	r.bt.why = am::EKbdWhyMemory;
+	r.Run(1100);                                 // (the once-a-second look)
+	r.id = r.cast.LinkOpen(am::Cast::ERouteTcp);
+	r.ToAtom(Psion::Hello(3 | 8));
+	// short of memory while sharing: offered all the same (keyboard mode frees it)
+	std::vector<Bytes> k = Kbds(r.Take());
+	CHECK(k.size() == 1 && k[0][0] == am::EKbdReady && k[0][2] == 0);
+	// MODE 1: said to be starting, tried again every second, started once there is room
+	r.ToAtom(Frame(am::ECastKeys, 0, Ev(am::EKbdMode, 0, 1)));
+	CHECK(!r.bt.started && r.cast.KbdState() == am::EKbdReady);
+	r.Run(2000);
+	CHECK(!r.bt.started && r.cast.KbdState() == am::EKbdReady && Kbds(r.Take()).empty());
+	r.bt.usable = true;
+	r.Run(1100);
+	k = Kbds(r.Take());
+	CHECK(r.bt.started && r.cast.KbdState() == am::EKbdWaiting && k.size() == 1 && k[0][0] == am::EKbdWaiting && k[0][2] == 0);
+	// short for longer than kStartMs: KBD 0 with why 1 (memory), said once in the log
+	r.ToAtom(Frame(am::ECastKeys, 0, Ev(am::EKbdMode, 0, 0)));
+	r.bt.usable = false;
+	r.Run(1100);
+	r.Take();
+	size_t logs = r.hal.logs.size();
+	r.ToAtom(Frame(am::ECastKeys, 0, Ev(am::EKbdMode, 0, 1)));
+	r.Run(am::PhoneKbd::kStartMs + 1100);
+	k = Kbds(r.Take());
+	CHECK(!k.empty() && k.back()[0] == am::EKbdOff && k.back()[1] == am::EKbdViaNone && k.back()[2] == am::EKbdWhyMemory);
+	CHECK(r.kbd.WhyCode() == am::EKbdWhyMemory && !r.bt.started);
+	int said = 0;
+	for (size_t i = logs; i < r.hal.logs.size(); i++)
+		said += r.hal.logs[i].find("not available") != std::string::npos;
+	CHECK(said == 1);
+	// another reason: not offered, and said at once (why 2: it did not start)
+	r.ToAtom(Frame(am::ECastKeys, 0, Ev(am::EKbdMode, 0, 0)));
+	r.bt.why = am::EKbdWhyFailed;
+	r.Run(1100);
+	k = Kbds(r.Take());
+	CHECK(!k.empty() && k.back()[0] == am::EKbdOff && k.back()[2] == am::EKbdWhyFailed);
+	// off in the settings: why 0, as an older Atom says
+	r.kbd.Configure(false, am::EKbdViaBt, am::EKbdBritish);
+	r.Run(100);
+	k = Kbds(r.Take());
+	CHECK(!k.empty() && k.back()[0] == am::EKbdOff && k.back()[2] == 0 && r.kbd.WhyCode() == 0);
 	}
 
 int main()
@@ -1604,6 +1772,8 @@ int main()
 	TestKbdKeys();
 	TestKbdLink();
 	TestKbdHooks();
+	TestKbdShare();
+	TestKbdWhy();
 	printf("test_cast: %d checks, %d failed\n", gChecks, gFails);
 	return gFails ? 1 : 0;
 	}

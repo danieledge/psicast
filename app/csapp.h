@@ -68,8 +68,9 @@ struct TCsSettings
 	TInt iBatteryStop;             // Stop sharing when the battery is low
 	TInt iKeepOnClose;             // When PsiCast closes: 0 stop sharing, 1 keep sharing
 	TInt iAtomKbd;                 // the Atom last said: 0 not known, 1 it has a phone keyboard, 2 it has none
+	TInt iKeepLog;                 // (0.20) Tools > Keep a log: 0 off (the standard, and for older files)
 	};
-const TInt KCsSettingsFields = 7;
+const TInt KCsSettingsFields = 8;
 const TInt KCsSettingsVersion = 1;
 
 // ----- the view ---------------------------------------------------------------
@@ -103,6 +104,7 @@ public:
 private:
 	void Draw(const TRect& aRect) const;
 	void DrawKeyboard(CWindowGc& aGc) const;
+	void DrawCountdown(CWindowGc& aGc) const;
 	void DrawLine(CWindowGc& aGc, TInt aY, const TDesC& aLabel, const TDesC& aText, TInt aRight = 0) const;
 	void DrawTile(CWindowGc& aGc, TInt aTile, TInt aLines) const;
 	TInt TileTextWidth() const;
@@ -200,8 +202,12 @@ public:
 	~CCsAppUi();
 	void ConstructL();
 	const TCsSettings& Settings() const { return iSettings; }
+	TBool LogOn() const { return iSettings.iKeepLog != 0; }   // (0.20) Tools > Keep a log
 	TBool Sharing() const { return iEngineOn && !iKbdOnly; }   // (not a keyboard-only connection)
 	TBool KbdMode() const { return iKbdMode; }
+	TInt Countdown() const { return iCountdown; }   // keyboard mode: seconds until the screen goes off (-1: not counting)
+	TBool Blanked() const { return iBlanked; }      // keyboard mode: the screen is off
+	void ScreenOn();                                // ...back on, and no count again for this phone connection
 	TUint KeysSent() const { return iShared ? iShared->keys_sent - iKeysBase : 0; }
 	TBool Paused() const { return iPaused; }
 	const CsShared* Shared() const { return iEngineOn ? iShared : NULL; }
@@ -238,6 +244,9 @@ private:
 	void KbdLeave(const TDesC& aSay);
 	void KbdKey(const TWsEvent& aEvent);
 	void KbdPut(TInt aKind, TUint aMods, TUint aCode);
+	void ScreenTick();
+	void ScreenOff(TBool aOff);
+	void ScreenRecover();
 	void PreviousProgram();
 	void PrefsL();
 	void ConnSettingsL();
@@ -279,6 +288,12 @@ private:
 	TBool iSwallowKey;             // ...so the character code they make when Ctrl goes up is not sent
 	TBool iKeysPut;                // events put in the ring since the last ring of the bell
 	TUint iKeysBase;               // keys_sent when the mode started
+	TInt iCountdown;               // seconds until the screen goes off, while counting (-1: not)
+	TTime iCountEnd;               // ...when it goes off
+	TBool iBlanked;                // the screen is off: backlight off, contrast down
+	TBool iCountDone;              // the count has run (or Dial stopped it) for this phone connection
+	TInt iSavedContrast;           // the user's own, while the screen is off
+	TBool iSavedLight;
 	};
 
 class CCsDocument : public CEikDocument

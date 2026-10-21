@@ -84,7 +84,16 @@ static const TCsHelpTopic KHelpTopics[] =
 	  "Control. Enter, Esc, Tab and Del are the phone's; Fn+Del (or Shift+Del) deletes "
 	  "forwards; Fn and the arrow keys are Home, End, Page up and Page down.\n"
 	  "\n"
-	  "To stop, press Shift+Ctrl+B (the one key that does not go to the phone), or tap "
+	  "Once the phone is connected, the Psion's screen counts down from 5 and goes off "
+	  "(the backlight off, the contrast at its lowest), as you are looking at the phone. "
+	  "The keys still go to the phone. Press Fn+Menu (Dial) to have the screen back, or "
+	  "tap it; Fn+Menu again turns it off at once. Fn+Menu is never sent to the phone. "
+	  "The screen comes back as it was when you stop typing or the phone goes.\n"
+	  "\n"
+	  "While you type on the phone the screen is not shared: the Atom lets the viewers go "
+	  "(they say the Psion is typing into a phone) and they come back when you stop.\n"
+	  "\n"
+	  "To stop, press Shift+Ctrl+B (one of the two keys that do not go to the phone), or tap "
 	  "Stop typing on the screen. Typing stops by itself if you go "
 	  "to another program." },
 
@@ -113,7 +122,11 @@ static const TCsHelpTopic KHelpTopics[] =
 	  "Sharing uses the batteries faster than usual. PsiCast reads the screen only while "
 	  "someone is watching and the Psion is on, and slows down when the screen is still. "
 	  "When the Psion is switched off, sharing waits, and goes on when it is switched on "
-	  "again." },
+	  "again.\n"
+	  "\n"
+	  "PsiCast keeps no log unless Tools > Keep a log is ticked. Then it writes what it "
+	  "does to psicast.log in its folder (psicast.old is the run before), for whoever is "
+	  "looking into a problem; untick it to stop (the log kept so far stays)." },
 	};
 const TInt KHelpCount = sizeof(KHelpTopics) / sizeof(KHelpTopics[0]);
 

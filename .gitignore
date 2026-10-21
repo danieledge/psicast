@@ -19,6 +19,12 @@ __pycache__/
 /test/fuzz
 /test/memuse
 
+# the M5Paper viewer's build and host tests
+/paper/.pio/
+/paper/test/test_paper
+/paper/test/paperhost
+/paper/test/build/
+
 # local files, not published (tools/export-public.sh leaves them out)
 *_local.*
 *.local.*

@@ -34,6 +34,16 @@
 //   tokens: GET /screen/token (behind the web password) gives a single-use
 //   token, good for 60 s, that the page's WebSocket must carry (?t=...);
 //   "control" is asked for there and needs the Psion's permission as well.
+//   keyboard mode (the phone keyboard on, between MODE 1 and MODE 0) and
+//   screen sharing are one or the other: Bluetooth needs the internal
+//   memory the viewers hold. At MODE 1 every viewer is sent a bye saying why
+//   and closed (4001), new ones are turned away (409), and once they are
+//   gone the screen copy is let go; VIEWERS 0 stops the Psion's pictures. At
+//   MODE 0, or when link A closes, the screen comes back (the first viewer
+//   asks for a keyframe, as ever) and viewers may connect again.
+//   memory: what lives as long as a viewer (CastViewer, castnet's Conn) is
+//   taken from PSRAM where the board has some (CastAlloc), so a viewer costs
+//   the internal heap next to nothing but its socket.
 //
 // No sockets here (castnet.cpp moves the bytes for both links; the modem
 // route feeds link A from Modem itself). Plain C++, no Arduino calls.
@@ -66,6 +76,11 @@ enum TCastType
 enum TCastView { ECastFull = 0x01, ECastRects = 0x02, ECastScroll = 0x03 };
 
 uint32_t CastCrc(const uint8_t* aData, size_t aLen);     // zlib's crc32
+// memory for what comes and goes with the viewers and the link: PSRAM where
+// the board has some (the internal heap is kept for Wi-Fi and Bluetooth),
+// else the heap. 0 if there is none
+void* CastAlloc(size_t aLen);
+void CastFree(void* aP);
 // one whole link A message into aOut (header, payload, CRC); returns its
 // length, or 0 if aMax is too small
 size_t CastFrame(uint8_t* aOut, size_t aMax, int aType, int aFlags, const uint8_t* aPayload, size_t aLen);
@@ -138,6 +153,7 @@ struct CastViewer
 	uint8_t small[1536];
 	size_t smallLen, smallPos;
 	bool closing;                   // a close frame is queued: then the connection ends
+	uint32_t shutMs;                // closed by us, not waiting on a slow socket for ever (0: not)
 	uint32_t pingN;                 // (stats)
 	uint32_t bytesOut, rateBytes;   // to this viewer, and per second
 	// latency: when its dirty area was first marked, the message carrying
@@ -179,7 +195,9 @@ public:
 	bool LinkMidMessage(uint32_t aId) const { return aId && aId == iLinkId && iRx.MidMessage(); }
 
 	// ----- link B (castnet: the WebSocket connections, after the handshake)
-	// a token from the page: a viewer slot, or -1 (aWhy: a few words)
+	// a token from the page: a viewer slot, or kRefused, or kTyping (the
+	// Psion is in keyboard mode: HTTP 409); aWhy: a few words
+	static const int kRefused = -1, kTyping = -2;
 	int ViewerOpen(const char* aToken, char* aWhy, size_t aWhyMax);
 	// bytes from the browser (WebSocket frames); false: close it now
 	bool ViewerIn(int aIdx, const uint8_t* aData, size_t aLen);
@@ -187,10 +205,14 @@ public:
 	size_t ViewerOut(int aIdx, uint8_t* aOut, size_t aMax);
 	// true once everything for a closing viewer is out: close the socket
 	bool ViewerDone(int aIdx) const;
+	// a viewer we closed whose socket has not taken it all in kShutMaxMs:
+	// close the socket anyway
+	bool ViewerOverdue(int aIdx) const;
 	void ViewerClose(int aIdx);
 
 	// ----- the page
-	// a new token (single use, 60 s); false if PsiCast is off
+	// a new token (single use, 60 s); false if PsiCast is off, or the
+	// Psion is typing into a phone (Typing())
 	bool NewToken(bool aControl, char* aOut, size_t aMax);
 	static const uint32_t kTokenMs = 60 * 1000;
 
@@ -202,6 +224,10 @@ public:
 	bool ControlAllowed() const { return iCtlAllowed; }
 	bool Paused() const { return iPaused; }
 	const char* PsionName() const { return iName; }
+	// the Psion is in keyboard mode, with the phone keyboard on: no screen
+	// sharing meanwhile (no viewers, none let in)
+	bool Typing() const;
+	static const char* const kTypingText;          // "the Psion is typing into a phone"
 	uint32_t Updates() const { return iUpdates; }
 	uint32_t Errors() const { return iRx.Errors() + iDecodeErrors; }
 	uint32_t RateBytes() const { return iRateBytes; }
@@ -241,6 +267,8 @@ public:
 	static const uint32_t kStatusMs = 1000;        // status JSON to the viewers at most this often
 	static const uint32_t kSyncMs = 5000;          // with stamps: PING (the clocks) at least this often, busy or not
 	static const uint32_t kViewPingMs = 2000;      // a WebSocket ping to each viewer this often (its round trip)
+	static const uint32_t kShutMaxMs = 3000;       // a viewer we close: its socket closed after this long, all out or not
+	static const int kCloseTyping = 4001;          // the WebSocket close code: the Psion is typing into a phone
 
 
 private:
@@ -280,6 +308,9 @@ private:
 	void OnStamp(uint32_t aCapMs);                // a stamped UPDATE, just taken
 	void ViewersChanged();
 	void SyncKbd();                               // KBD to the Psion, if its state has changed
+	void CheckTyping();                           // keyboard mode come or gone: the viewers let go, the screen back
+	void Shut(CastViewer& aV, int aCode, const char* aReason);   // a bye and a close (code and reason) after what is queued
+	static void DeleteViewer(CastViewer* aV);
 
 	Hal& iHal;
 	bool iEnabled;
@@ -326,6 +357,10 @@ private:
 	bool iKbdCap = false, iKbdSent = false;
 	uint8_t iKbdLast[4] = { 0 };
 	char iKbdLastName[32] = "";
+	// keyboard mode (Typing()) as last seen, and the screen's size to make
+	// again after it (0: nothing to make)
+	bool iTyping = false;
+	int iTypW = 0, iTypH = 0;
 	// the input for the Psion, waiting to go
 	static const int kInputMax = 128;
 	uint8_t iInput[kInputMax][8];

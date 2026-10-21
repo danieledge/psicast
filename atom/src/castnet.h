@@ -18,7 +18,7 @@ class CastNet
 	{
 public:
 	CastNet();
-	~CastNet() { Stop(); }
+	~CastNet();
 	// from the main loop. aViewers: the WebSocket server should be up
 	// (PsiCast on); aLinkAddr: the address link A listens on now ("" = not
 	// now: no PPP call), e.g. "192.168.7.1"; aLoopback: the viewers' server on
@@ -31,6 +31,7 @@ public:
 	uint16_t iLinkPort = kCastPort;
 
 	static const size_t kOutBuf = 1460;          // a viewer's bytes waiting for the socket (one segment)
+	static const size_t kBuf = 1460;             // link A's out, and what comes in
 	static const size_t kPassBytes = 16 * 1024;  // the most one viewer is sent in a pass
 	static const uint32_t kHandshakeMs = 5000;
 
@@ -59,14 +60,16 @@ private:
 	int iViewSrv;
 	bool iViewLoop;
 	static const int kConns = kCastViewers + 2;  // (two more for handshakes and refusals)
-	Conn* iConn[kConns];                         // (allocated while connected: nothing kept when idle)
+	Conn* iConn[kConns];                         // (allocated while connected, in PSRAM where there is some: CastAlloc)
 	int iLinkSrv;
 	char iLinkAddr[16];
 	int iLinkFd;
 	uint32_t iLinkId;
-	uint8_t iLinkOut[1460];
+	// (kBuf each, taken at the first Loop, in PSRAM where there is some: not
+	// in the firmware's static memory, which is internal)
+	uint8_t* iLinkOut;
 	size_t iLinkOutLen, iLinkOutPos;
-	uint8_t iBuf[1460];
+	uint8_t* iBuf;
 	};
 
 } // namespace am

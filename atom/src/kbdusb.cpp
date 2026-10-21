@@ -40,16 +40,18 @@ class UsbLink : public KbdLink
 public:
 	explicit UsbLink(Hal& aHal) : iHal(aHal) {}
 
-	bool Usable(char* aWhy, size_t aMax) override
+	bool Usable(char* aWhy, size_t aMax, int& aCode) override
 		{
 		if (gUsbHost)
 			{
 			snprintf(aWhy, aMax, "the USB-C is a host (AT$USB=1)");
+			aCode = EKbdWhyHost;
 			return false;
 			}
 		if (iFailed)
 			{
 			snprintf(aWhy, aMax, "USB did not start");
+			aCode = EKbdWhyFailed;
 			return false;
 			}
 		return true;

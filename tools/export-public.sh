@@ -12,8 +12,8 @@ mkdir -p "$DIR"
 git -C "$HERE" archive HEAD | tar -x -C "$DIR"
 find "$DIR" \( -name '*_local.*' -o -name '*.local.*' -o -name '*.local' \) -print -delete
 [ -f "$DIR/tools/public-check.local" ] && rm "$DIR/tools/public-check.local"
-# (the iOS app is not published yet)
-rm -rf "$DIR/ios"
+# (the iOS app and the M5Paper viewer are not published yet)
+rm -rf "$DIR/ios" "$DIR/paper"
 if [ -f "$HERE/tools/public-check.local" ]; then
 	if grep -r -I -n -i -E -f "$HERE/tools/public-check.local" "$DIR" --exclude-dir=.git; then
 		echo "export-public: the lines above name something private"; exit 1
