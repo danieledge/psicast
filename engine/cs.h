@@ -15,6 +15,7 @@ unsigned long cs_ms(void);             /* milliseconds, from the tick (stops whi
 void cs_log(const char *fmt, ...);
 int  cs_app_gone(void);                /* 1: PsiCast's process has ended */
 void cs_beat(void);
+void cs_due(int aMs);                  /* (0.22) about to wait up to aMs: the watchdog's yardstick */
 
 /* the screen, into aFrame (CS_STRIDE x CS_H, PROTOCOL.md's model, word-
    aligned). 0, 1 if it has not changed at all since the last call (aFrame

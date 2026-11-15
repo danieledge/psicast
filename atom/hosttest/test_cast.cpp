@@ -984,12 +984,24 @@ static void TestHooks()
 	int n = 0, open = 0;
 	for (const am::ExtRoute* r = ext.Routes(); r->path; r++, n++)
 		open += r->open;
-	CHECK(n == 9 && open == 3);
+	CHECK(n == 14 && open == 3);
 	TestQuery q;
+	// (0.22) the picture pack: none put on this Atom, so 404 (the viewer greys its setting out)
+	if (!getenv("HOSTMODEM_PICTURES"))
+		{ am::ExtReply r; ext.Get("/screen/pictures.json", q, r); CHECK(r.status == 404); }
 	{ am::ExtReply r; ext.Get("/screen", q, r); CHECK(r.status == 200 && r.gzip && r.len > 1000 && strcmp(r.cache, "no-cache") == 0); }
 	{ am::ExtReply r; ext.Get("/screen/manifest.json", q, r); CHECK(r.status == 200 && !r.gzip && strstr((const char*)r.body, "\"start_url\":\"/screen\"")); }
 	{ am::ExtReply r; ext.Get("/screen/s7icons.json", q, r); CHECK(r.status == 200 && r.gzip && r.body[0] == 0x1f && strcmp(r.cache, "max-age=604800") == 0); }
 	{ am::ExtReply r; ext.Get("/screen/silk5mx.jpg", q, r); CHECK(r.status == 200 && !r.gzip && r.body[0] == 0xff); }
+	// the High-res shader, the sharp redraws and the text's matcher, gzipped and cached; its fonts if this build has them (else 404)
+	{ am::ExtReply r; ext.Get("/screen/xbrz.js", q, r); CHECK(r.status == 200 && r.gzip && r.body[0] == 0x1f && strcmp(r.cache, "max-age=604800") == 0); }
+	{ am::ExtReply r; ext.Get("/screen/textmatch.js", q, r); CHECK(r.status == 200 && r.gzip && r.body[0] == 0x1f); }
+	{ am::ExtReply r; ext.Get("/screen/sharp.js", q, r); CHECK(r.status == 200 && r.gzip && r.body[0] == 0x1f); }
+#if defined(__has_include) && __has_include("../src/castfonts_local.h")
+	{ am::ExtReply r; ext.Get("/screen/eonfonts.json", q, r); CHECK(r.status == 200 && r.gzip); }
+#else
+	{ am::ExtReply r; ext.Get("/screen/eonfonts.json", q, r); CHECK(r.status == 404); }
+#endif
 	{
 	q.control = "1";
 	am::ExtReply r;

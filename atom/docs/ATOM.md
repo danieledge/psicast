@@ -62,7 +62,12 @@ Psion. The protocol is in `docs/PROTOCOL.md`; the code is `atom/src/`.
   (MP4 on an iPhone) with the taps and keys drawn on it if wanted, a full
   screen view, and a status line: updates a second, data, latency, the
   Psion's battery and free memory. It reconnects by itself. **Add to Home
-  Screen** makes it an app.
+  Screen** makes it an app. *Viewing* has the Upscaling (Pixels, Smooth or
+  High-res: xBRZ in WebGL 2) and two sharp redraws, of EIKON's boxes and
+  lines and of its text in the phone's fonts (see the README's *Sharper on
+  the phone*); their scripts (`/screen/xbrz.js`, `/screen/sharp.js`,
+  `/screen/textmatch.js`) and the ROM fonts (`/screen/eonfonts.json`, 404
+  in a build without `castfonts_local.h`) are fetched only when needed.
 - **Control** (the hand button): taps on the picture are pen taps on the
   Psion, the phone's keyboard types (the Psion finds the keys for each
   character), and a key bar has Menu, Esc, Tab, Ctrl, Shift and Fn (a tap
@@ -167,7 +172,7 @@ build as it is: `USB.begin()` moves the PHY to the OTG controller. So:
 
 ## Testing
 
-    make -C atom/hosttest test      # test_cast, test_iconmatch.js, the Modern packs' sides
+    make -C atom/hosttest test      # test_cast, test_iconmatch.js, test_roles.js, test_textmatch.js, the Modern packs' sides
     make -C atom/hosttest e2e       # test_cast_e2e.py
     make -C atom/hosttest shots     # cast_page_shot.py (Playwright)
 

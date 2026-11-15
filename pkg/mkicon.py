@@ -11,6 +11,7 @@ import os, sys
 from PIL import Image, ImageDraw
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../core/tools/icon"))
 from aif import write_aif
+from colouricon import colour_icons   # the colour icons (colour/), when there
 K, D, L, W = 0, 85, 170, 255
 
 
@@ -48,7 +49,7 @@ def icon(n):
 
 
 if __name__ == "__main__":
-    icons = [icon(n) for n in (24, 32, 48)]
+    icons = colour_icons("psicast") or [icon(n) for n in (24, 32, 48)]
     out = sys.argv[1] if len(sys.argv) > 1 else "psicast.aif"
     print(out, write_aif(out, 0x01000A92, [(1, "PsiCast"), (10, "PsiCast")], icons), "bytes")
     if len(sys.argv) > 1:

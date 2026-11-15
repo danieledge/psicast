@@ -944,6 +944,7 @@ static int session(void)
 		if (until > 1000 && !g_s.welcomed) until = 1000;
 		if (until > 2000) until = 2000;
 		wait = until < 0 ? 0 : (int)until;
+		cs_due(wait);
 		m = pg_wait(wait, 1, 1);
 		if (m & 2) {
 			drain_app();
@@ -981,6 +982,7 @@ static int pause_or_stop(int aMs)
 			return 1;
 		if (left <= 0)
 			return 0;
+		cs_due(left > 2000 ? 2000 : (int)left);
 		if (pg_wait(left > 2000 ? 2000 : (int)left, 0, 1) & 2)
 			drain_app();
 	}

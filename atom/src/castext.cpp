@@ -8,6 +8,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <stddef.h>
+#include <stdlib.h>
+#if defined(ARDUINO) || defined(ESP_PLATFORM)
+#include <esp_partition.h>
+#endif
 
 namespace am {
 
@@ -120,7 +124,8 @@ bool CastExt::LedWanted(ExtLed& aOut) const
 // The viewer (behind the password), its token, and the Home Screen files
 // (not secret, and fetched without the password by iOS); the Series 7 and
 // Modern themes' colour pictures (and their matcher), fetched only when one
-// is chosen; the 5mx's face for full screen
+// is chosen; the 5mx's face for full screen; the High-res shader and the
+// sharp text's matcher and fonts, fetched only when those settings are on
 static const ExtRoute kRoutes[] =
 	{
 	{ "/screen", false },
@@ -132,10 +137,68 @@ static const ExtRoute kRoutes[] =
 	{ "/screen/s7icons.json", false },
 	{ "/screen/modicons.json", false },
 	{ "/screen/silk5mx.jpg", false },
+	{ "/screen/xbrz.js", false },
+	{ "/screen/sharp.js", false },
+	{ "/screen/textmatch.js", false },
+	{ "/screen/eonfonts.json", false },
+	{ "/screen/pictures.json", false },
 	{ 0, false }
 	};
 
 const ExtRoute* CastExt::Routes() const { return kRoutes; }
+
+// (0.22) the picture pack: known programs' pictures redrawn (PsiTris's, Chess's,
+// Monopoly's), for the viewer's Replace known pictures. Not in the firmware
+// (the pictures are not ours to publish, and too big): uploaded to the Atom's
+// spare data partition by POST /pack (the board's web pages), "PCPK", the
+// length, then the gzipped JSON (tools/mkpicpack.py); read here in place,
+// mapped from the flash. The dev box's test modem reads $HOSTMODEM_PICTURES.
+const uint8_t* CastPack(size_t& aLen)
+	{
+	aLen = 0;
+#if defined(ARDUINO) || defined(ESP_PLATFORM)
+	static esp_partition_mmap_handle_t sMap;
+	static bool sMapped = false;
+	if (sMapped)
+		{
+		esp_partition_munmap(sMap);          // (the last reply has gone: map it afresh, the pack may be new)
+		sMapped = false;
+		}
+	const esp_partition_t* part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, 0);
+	uint8_t head[8];
+	if (!part || esp_partition_read(part, 0, head, sizeof(head)) != ESP_OK || memcmp(head, "PCPK", 4) != 0)
+		return 0;
+	uint32_t n = head[4] | (head[5] << 8) | (head[6] << 16) | ((uint32_t)head[7] << 24);
+	if (!n || n > part->size - 8)
+		return 0;
+	const void* p = 0;
+	if (esp_partition_mmap(part, 0, n + 8, ESP_PARTITION_MMAP_DATA, &p, &sMap) != ESP_OK)
+		return 0;
+	sMapped = true;
+	aLen = n;
+	return (const uint8_t*)p + 8;
+#else
+	static uint8_t* sData = 0;
+	static size_t sLen = 0;
+	const char* path = getenv("HOSTMODEM_PICTURES");
+	if (!sData && path)
+		{
+		FILE* f = fopen(path, "rb");
+		if (f)
+			{
+			fseek(f, 0, SEEK_END);
+			long n = ftell(f);
+			fseek(f, 0, SEEK_SET);
+			sData = n > 0 ? (uint8_t*)malloc((size_t)n) : 0;
+			if (sData && fread(sData, 1, (size_t)n, f) == (size_t)n)
+				sLen = (size_t)n;
+			fclose(f);
+			}
+		}
+	aLen = sLen;
+	return sLen ? sData : 0;
+#endif
+	}
 
 // a gzipped file of the viewer's (a pack this build was made without: 404)
 static void Asset(ExtReply& aR, const char* aType, const unsigned char* aData, unsigned aLen)
@@ -183,6 +246,23 @@ void CastExt::Get(const char* aPath, const ExtQuery& aQuery, ExtReply& aR)
 		Asset(aR, "application/json", kCastModIconsGz, kCastModIconsGzLen);
 	else if (strcmp(aPath, "/screen/silk5mx.jpg") == 0)
 		aR.Data(200, "image/jpeg", kCastSilk5mx, kCastSilk5mxLen, false, "max-age=604800");   // (not gzipped)
+	else if (strcmp(aPath, "/screen/xbrz.js") == 0)
+		Asset(aR, "text/javascript", kCastXbrzGz, kCastXbrzGzLen);
+	else if (strcmp(aPath, "/screen/sharp.js") == 0)
+		Asset(aR, "text/javascript", kCastSharpGz, kCastSharpGzLen);
+	else if (strcmp(aPath, "/screen/textmatch.js") == 0)
+		Asset(aR, "text/javascript", kCastTextMatchGz, kCastTextMatchGzLen);
+	else if (strcmp(aPath, "/screen/eonfonts.json") == 0)
+		Asset(aR, "application/json", kCastFontsGz, kCastFontsGzLen);
+	else if (strcmp(aPath, "/screen/pictures.json") == 0)
+		{
+		size_t n;
+		const uint8_t* p = CastPack(n);
+		if (p)
+			aR.Data(200, "application/octet-stream", p, n, true, "no-cache");   // (a pack: JSON, or JSON and its images)
+		else
+			aR.Text(404, "application/json", "{\"error\":\"no picture pack on this Atom\"}", "no-store");
+		}
 	}
 
 } // namespace am

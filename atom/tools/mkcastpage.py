@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 # mkcastpage.py - PsiCast's viewer page for the firmware: src/viewer.html
-# gzipped, the Home Screen icons (drawn here with Pillow) and the web app
-# manifest, as C arrays in src/castpage.h (which is committed, so a
-# build needs neither Python nor Pillow). Run it after changing the page:
+# gzipped, the Home Screen icons (drawn here with Pillow), the web app
+# manifest, and the scripts the page loads when a setting needs them
+# (src/xbrz.js: High-res, GPL-3.0; src/sharp.js: the sharp redraws;
+# src/textmatch.js: the sharp text and symbols, whose fonts come from castfonts_local.h, tools/mkfonts.py, when
+# it is there), as C arrays in src/castpage.h (which is committed, so a
+# build needs neither Python nor Pillow). Run it after changing them:
 #   python3 tools/mkcastpage.py
 # MIT licence (see LICENSE at the top of the repository).
 import gzip, io, json, os, sys
@@ -49,9 +52,22 @@ def carray(name, data):
         name, "\n".join(lines), name, len(data))
 
 
+def gz(name):
+    return gzip.compress(open(os.path.join(SRC, name), "rb").read(), compresslevel=9, mtime=0)
+
+
 def main():
     html = open(os.path.join(SRC, "viewer.html"), "rb").read()
+    # (the assets' stamp: a hash of everything in src/ the page loads from,
+    # so a browser fetches them again after a firmware with any of them new)
+    import hashlib
+    h = hashlib.sha256()
+    for n in sorted(os.listdir(SRC)):
+        if n not in ("viewer.html", "castpage.h") and os.path.isfile(os.path.join(SRC, n)):
+            h.update(n.encode() + b"\0" + open(os.path.join(SRC, n), "rb").read())
+    html = html.replace(b"__CAST_ASSETS__", h.hexdigest()[:10].encode())
     page = gzip.compress(html, compresslevel=9, mtime=0)
+    xbrz, tm, sharp = gz("xbrz.js"), gz("textmatch.js"), gz("sharp.js")
     manifest = json.dumps({
         "name": "PsiCast", "short_name": "PsiCast", "start_url": "/screen", "scope": "/screen",
         "display": "standalone", "orientation": "any", "background_color": "#15181b", "theme_color": "#15181b",
@@ -63,9 +79,17 @@ def main():
            "// MIT licence (see LICENSE at the top of the repository).",
            "#ifndef ATOM_CASTPAGE_H", "#define ATOM_CASTPAGE_H", "",
            carray("kCastPageGz", page), carray("kCastIcon180", icon(180)), carray("kCastIcon512", icon(512)),
-           "static const char kCastManifest[] = %s;" % json.dumps(manifest), "", "#endif", ""]
+           "static const char kCastManifest[] = %s;" % json.dumps(manifest), "",
+           "// xbrz.js (High-res): GPL-3.0, a port of libretro's xBRZ freescale shader (see the file)",
+           carray("kCastXbrzGz", xbrz), carray("kCastTextMatchGz", tm), carray("kCastSharpGz", sharp),
+           "// the ROM fonts for the sharp text (tools/mkfonts.py; local: not published). Without them",
+           "// the route answers 404 and the viewer dims Redraw text sharply",
+           "#if defined(__has_include)", "#if __has_include(\"castfonts_local.h\")", "#define CAST_FONTS_LOCAL 1",
+           "#include \"castfonts_local.h\"", "#endif", "#endif", "#ifndef CAST_FONTS_LOCAL",
+           "static const unsigned char kCastFontsGz[1] = { 0 };", "static const unsigned kCastFontsGzLen = 0;", "#endif",
+           "", "#endif", ""]
     open(os.path.join(SRC, "castpage.h"), "w").write("\n".join(out))
-    print("castpage.h: page %d bytes (%d gzipped)" % (len(html), len(page)))
+    print("castpage.h: page %d bytes (%d gzipped), xbrz.js %d, sharp.js %d, textmatch.js %d gzipped" % (len(html), len(page), len(xbrz), len(sharp), len(tm)))
 
 
 if __name__ == "__main__":

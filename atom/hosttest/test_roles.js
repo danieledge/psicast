@@ -208,6 +208,52 @@ if (boxes) {
   }
 }
 
+// ---- the shapes for the sharp boxes and lines: [what, x0, y0, x1, y1] (±1), or a triangle [tri, x0, y0, x1, y1] ----
+const SHAPES = {
+  // PsiTerm's Preferences: the dialog's thick border (5 pixels) and its
+  // title's line, its three buttons (3), the toolbar's buttons and box
+  "dt-prefs/end.png": [["k5", 124, 8, 515, 234], ["k3", 149, 196, 251, 218], ["k3", 268, 196, 370, 218], ["k3", 387, 196, 489, 218],
+    ["k3", 571, 25, 639, 61], ["k3", 571, 135, 639, 172], ["k1", 570, 0, 639, 239], ["k1", 137, 42, 192, 58]],
+  // PsiMail's menu: its border, the cascades' arrows, the scroll bar's
+  // parts and arrows (the one dimmed, in dark grey), the selections
+  "pmail/end.png": [["k5", 10, 2, 365, 235], ["right", 346, 63, 353, 71], ["right", 346, 185, 353, 193], ["k1", 546, 44, 568, 238],
+    ["k3", 546, 192, 568, 215], ["up", 553, 199, 561, 207], ["down", 553, 222, 561, 230], ["k1", 17, 35, 358, 56], ["k1", 364, 57, 543, 80]],
+};
+{
+  const near = (a, b) => Math.abs(a - b) <= 1;
+  for (const rel of Object.keys(SHAPES)) {
+    const grey = screen(rel);
+    if (!grey) continue;
+    const shapes = [];
+    v.findRoles(grey, W, H, G.role, stack, shapes);
+    const name = s => s.tri || "k" + s.k;
+    for (const [k, x0, y0, x1, y1] of SHAPES[rel]) {
+      checks++;
+      if (!shapes.some(s => name(s) === k && near(s.x0, x0) && near(s.y0, y0) && near(s.x1, x1) && near(s.y1, y1)))
+        fail(`${rel}: no ${k} shape at ${x0},${y0}-${x1},${y1} (${shapes.map(s => name(s) + "@" + s.x0 + "," + s.y0 + "-" + s.x1 + "," + s.y1).join(" ")})`);
+    }
+    // the dialog's title line, and the menu's top only as far as was checked
+    const big = shapes.find(s => s.k === 5);
+    checks++;
+    if (rel === "dt-prefs/end.png" && !(big && big.rows.length === 1 && big.rows[0] === 33)) fail("dt-prefs: the title bar's line is row 33");
+    if (rel === "pmail/end.png" && !(big && big.tx1 === big.x0 + 20)) fail("pmail: the menu's top runs only under its title");
+    // a triangle's pixels are its ink, and are what it says
+    for (const s of shapes.filter(s => s.tri)) {
+      checks++;
+      if (!s.px.every(i => grey[i] === s.c)) fail(`${rel}: a ${s.tri} arrow's pixels are not all its ink`);
+    }
+  }
+  // nothing on a screen without EIKON's parts: a page of text, a picture
+  const blank = new Uint8Array(W * H).fill(15);
+  let seed = 3;
+  for (let y = 40; y < 200; y++) for (let x = 40; x < 400; x++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; blank[y * W + x] = seed % 16; }
+  for (let y = 60; y < 69; y++) for (let x = 450; x < 450 + (y - 60) * 2 + 1; x++) blank[y * W + x] = 0;    // (a triangle on its own, in no part)
+  const shapes = [];
+  v.findRoles(blank, W, H, G.role, stack, shapes);
+  checks++;
+  if (shapes.length) fail("a picture and a loose triangle give shapes: " + JSON.stringify(shapes.map(s => s.tri || s.k)));
+}
+
 // ---- the painting: Modern is flat (a checkerboard of two greys is one tint) ----
 {
   const modern = v.THEMES.find(t => t.id === "modern");

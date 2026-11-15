@@ -85,6 +85,11 @@ static void LogOpen()
 	TParse parse;
 	parse.Set(RProcess().FileName(), NULL, NULL);
 	TFileName log(parse.DriveAndPath()), old;
+	if (log.Length() && (log[0] == 'Z' || log[0] == 'z'))
+		{
+		log[0] = 'C';                        // (PsiCast in the ROM: Z: is read only)
+		Fs().MkDirAll(log);
+		}
 	log.Append(_L("psicast.log"));
 	old = log;
 	old.SetLength(old.Length() - 3);
@@ -171,12 +176,14 @@ extern "C" int cs_app_gone()
 // them is a switch-off. psiglue then checks the link is still there (its
 // SwitchOnCheck, on net.switch_on), as the apps ask on HandleSwitchOnEventL
 // - here because the app may have closed.
+static void WatchLog();
 static TInt64 gBeatClock;
 static TUint gBeatTick = 0;
 
 extern "C" void cs_beat()
 	{
 	gCs->eng_beat++;
+	WatchLog();
 	TTime now;
 	now.UniversalTime();
 	TUint tick = User::TickCount();
@@ -192,6 +199,101 @@ extern "C" void cs_beat()
 		}
 	gBeatClock = now.Int64();
 	gBeatTick = tick;
+	}
+
+// ----- the watchdog (0.22) ------------------------------------------------------
+// The engine runs below every program (EPriorityLow), so the one in front
+// never waits for a picture. A program that never stops for breath (a game
+// such as PsiTris) then leaves it no time at all: nothing is captured,
+// nothing is sent, and after 20 s of silence the Atom ends the link. A small
+// thread above everything looks every 250 ms: when the loop is more than a
+// second past the time it meant to wake, the engine is raised to the front
+// program's priority (the two share the processor) for 30 s, then tries
+// low again. It only sets numbers: the loop writes the log (cs_beat).
+
+static volatile TUint gDueTick = 0;          // the tick the loop means to be back by (0: not yet)
+static volatile TUint gWatchBeat = 0;        // + 1 each loop (cs_beat)
+static volatile TInt gStarves = 0;           // times the engine was raised
+static volatile TUint gStarveTicks = 0;      // how long it had been waiting, the last time
+static volatile TInt gLowered = 0;           // times it went back to low
+static volatile TBool gWatchStop = EFalse;
+static TInt gStarvesLogged = 0, gLoweredLogged = 0;
+static RThread gWatch;
+static TBool gWatchOn = EFalse;
+const TUint KWatchLateTicks = 64;            // 1 s past the wake time (a tick is 1/64 s)
+const TUint KWatchHoldTicks = 64 * 30;       // raised for 30 s
+
+extern "C" void cs_due(int aMs)
+	{
+	gDueTick = User::TickCount() + (TUint)(aMs < 0 ? 0 : aMs) * 64 / 1000 + 1;
+	}
+
+static TInt WatchMain(TAny*)
+	{
+	TUint beat = gWatchBeat, raisedAt = 0;
+	TBool raised = EFalse;
+	while (!gWatchStop)
+		{
+		User::After(250000);
+		TUint now = User::TickCount(), due = gDueTick, b = gWatchBeat;
+		if (!raised && due && b == beat && (TInt)(now - due) > (TInt)KWatchLateTicks)
+			{
+			RProcess().SetPriority(EPriorityForeground);
+			raised = ETrue;
+			raisedAt = now;
+			gStarveTicks = now - due + KWatchLateTicks;
+			gStarves++;
+			}
+		else if (raised && b != beat && now - raisedAt > KWatchHoldTicks)
+			{
+			RProcess().SetPriority(EPriorityLow);
+			raised = EFalse;
+			gLowered++;
+			}
+		beat = b;
+		}
+	return 0;
+	}
+
+static void WatchStart()
+	{
+	if (gWatch.Create(_L("PsiCastWatch"), WatchMain, 2048, &User::Heap(), NULL) != KErrNone)
+		{
+		cs_log("cast: no watchdog (a game may starve the sharing)");
+		return;
+		}
+	gWatch.SetPriority(EPriorityAbsoluteHigh);
+	gWatch.Resume();
+	gWatchOn = ETrue;
+	}
+
+static void WatchEnd()
+	{
+	if (!gWatchOn)
+		return;
+	gWatchStop = ETrue;
+	TRequestStatus st;
+	gWatch.Logon(st);
+	User::WaitForRequest(st);
+	gWatch.Close();
+	gWatchOn = EFalse;
+	}
+
+// (from cs_beat, in the loop's own thread: the log is its)
+static void WatchLog()
+	{
+	gWatchBeat++;
+	if (gStarves != gStarvesLogged)
+		{
+		gStarvesLogged = gStarves;
+		cs_log("cast: no processor time for %d.%d s (the program in front kept it): sharing it for 30 s (%d times)",
+			(TInt)(gStarveTicks / 64), (TInt)(gStarveTicks % 64 * 10 / 64), gStarvesLogged);
+		}
+	if (gLowered != gLoweredLogged)
+		{
+		gLoweredLogged = gLowered;
+		cs_log("cast: back below every program");
+		}
 	}
 
 // ----- the screen -----------------------------------------------------------------
@@ -686,6 +788,7 @@ int main(int, char**)
 	// below every program, so the one in front never waits for a picture
 	RProcess().SetPriority(EPriorityLow);
 	Fs();
+	WatchStart();                            // (0.22: unless the one in front never lets go)
 	pg_set_link_log(LinkLog);                // (cs_log opens psicast.log only with log_on)
 	{
 	TMemoryInfoV1Buf mi;
@@ -696,6 +799,7 @@ int main(int, char**)
 		freeRam / 1024, mOk ? mb().iXYInputSizeInPixels.iWidth : 0, mOk ? mb().iXYInputSizeInPixels.iHeight : 0);
 	}
 	cs_loop();
+	WatchEnd();
 	cs_log("psicast.exe ends");
 	WsClose();
 	pg_close();

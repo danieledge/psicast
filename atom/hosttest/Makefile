@@ -6,9 +6,10 @@
 #                   tokens, WebSocket, per-viewer merging (pixel-exact), the
 #                   input path, the modem route, the firmware's hooks and
 #                   the phone keyboard (its tables, KEYS, KBD, a fake phone);
-#                   test_iconmatch.js and test_roles.js (node: the viewer's
-#                   pictures and role pass on real screens) and the Modern
-#                   packs' 5mx sides
+#                   test_iconmatch.js, test_roles.js and test_textmatch.js
+#                   (node: the viewer's pictures, role pass and the shapes
+#                   it finds, and its text matcher, on real screens) and the
+#                   Modern packs' 5mx sides
 #   make e2e        test_cast_e2e.py: hostmodem with the module in
 #                   (HOSTMODEM_CAST=1), a fake Psion on both routes, WebSocket
 #                   viewers
@@ -41,7 +42,7 @@ INC = $(FW_INC) -I$(FW)/hosttest -I$(MOD) -I$(CODEC)
 
 test: test_cast
 	./test_cast
-	if command -v node >/dev/null; then node test_iconmatch.js && node test_roles.js; else echo 'test_iconmatch, test_roles: SKIP (no node)'; fi
+	if command -v node >/dev/null; then node test_iconmatch.js && node test_roles.js && node test_textmatch.js; else echo 'test_iconmatch, test_roles, test_textmatch: SKIP (no node)'; fi
 	# the Modern packs' 5mx sides against the built pictures (those built here)
 	python3 ../tools/modicons.py --check
 	if [ -f ../tools/modicons/specs_local.py ]; then python3 ../tools/modicons.py --spec ../tools/modicons/specs_local.py --check; fi

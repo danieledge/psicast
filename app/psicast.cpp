@@ -23,7 +23,7 @@
 #include "psilink.h"
 #include "pglinktest.h"
 
-_LIT(KVersion, "0.21");            // also pkg/psicast.pkg and atom/src/castext.h
+_LIT(KVersion, "0.24");            // also pkg/psicast.pkg and atom/src/castext.h
 _LIT(KEngineExe, "psicast.exe");
 _LIT(KIniFile, "C:\\System\\Apps\\PsiCast\\PsiCast.ini");
 _LIT(KAtomHost, "192.168.7.1");    // the Atom's own address (PROTOCOL.md link A)
@@ -1223,6 +1223,11 @@ void CCsAppUi::StartL(TBool aKbdOnly)
 	TParse home;
 	home.Set(Application()->AppFullName(), NULL, NULL);
 	TFileName homePath(home.DriveAndPath());
+	if (homePath.Length() && (homePath[0] == 'Z' || homePath[0] == 'z'))
+		{
+		homePath[0] = 'C';                   // (PsiCast in the ROM: Z: is read only)
+		iCoeEnv->FsSession().MkDirAll(homePath);
+		}
 	if (homePath.Length() > 1 && homePath[homePath.Length() - 1] == '\\')
 		homePath.SetLength(homePath.Length() - 1);
 	CopyToC(s->net.home, sizeof(s->net.home), homePath);

@@ -94,6 +94,12 @@ body.control #keys{display:block}
 .tog::after{content:"";position:absolute;left:3px;top:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:left .2s}
 .tog.on{background:var(--accent)}
 .tog.on::after{left:21px}
+.seg{display:flex;gap:6px;padding:2px 0 10px;border-bottom:1px solid var(--line)}
+.seg button{flex:1;padding:8px 4px;border-radius:10px;background:var(--panel2);font-size:14px;border:2px solid transparent;line-height:1.25}
+.seg button small{display:block;color:var(--dim);font-size:11.5px}
+.seg button.on{border-color:var(--accent)}
+.seg button.off,.card .line.off{opacity:.45}
+.card .line.sub{border-bottom:0;padding-bottom:4px}
 dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0;font-size:14px}
 dt{color:var(--dim)}
 dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
@@ -230,6 +236,15 @@ body.btnfloat.btnhide #exit,body.btnfloat.btnhide #fkbd{opacity:0;pointer-events
   <div class="line"><div>Show taps and keys in videos<small>Circles where you tap, and the keys you press</small></div><button class="tog" id="tOverlay" aria-label="Show taps and keys in videos"></button></div>
   <div class="line"><div>Open in full screen<small>Start with only the Psion showing; × goes back</small></div><button class="tog" id="tFull" aria-label="Open in full screen"></button></div>
   <div class="line"><div>Status line<small>Updates, data, latency and the Psion's battery</small></div><button class="tog" id="tStatus" aria-label="Status line"></button></div>
+  <div class="line sub"><div>Upscaling<small id="upNote">How the Psion's pixels are drawn on this screen</small></div></div>
+  <div class="seg" id="upscale" role="radiogroup" aria-label="Upscaling">
+    <button data-up="pixels" role="radio">Pixels<small>Square, sharp</small></button>
+    <button data-up="smooth" role="radio">Smooth<small>Curves filled in</small></button>
+    <button data-up="hires" role="radio">High-res<small>Lines redrawn</small></button>
+  </div>
+  <div class="line" id="lText"><div>Redraw text sharply<small id="textNote">The Psion's own text drawn in this phone's fonts</small></div><button class="tog" id="tText" aria-label="Redraw text sharply"></button></div>
+  <div class="line" id="lPics"><div>Replace known pictures<small id="picsNote">Pictures that some programs draw (PsiTris, Chess, Monopoly) shown redrawn in colour</small></div><button class="tog" id="tPics" aria-label="Replace known pictures"></button></div>
+  <div class="line" id="lChrome"><div>Redraw boxes and lines sharply<small id="chromeNote">Borders, buttons, title bars, scroll bars and arrows drawn crisp</small></div><button class="tog" id="tChrome" aria-label="Redraw boxes and lines sharply"></button></div>
   <h3>Psion</h3>
   <dl id="details"></dl>
   <div class="btns"><button class="btn" id="bRefresh">Repaint the screen</button><button class="btn" id="bClose">Done</button></div>
@@ -331,6 +346,7 @@ const UI_COLOURS = {
 // part's colour
 const NROLES = 13;
 const lut = new Uint32Array(NROLES << 8);
+const flatCol = new Uint32Array(NROLES);          // (a part's face drawn flat: its colour, or the mean of the dither's two)
 let flat = false;
 function makeLut() {
   const u = UI_COLOURS[theme.ui] || [], plain = [], pair = {};
@@ -342,35 +358,443 @@ function makeLut() {
     const c = u[r] ? u[r] : flat && w !== v ? pair[v << 4 | w] || mean(plain[v], plain[w]) : plain[v];
     lut[r << 8 | v << 4 | w] = pack(c);
   }
+  for (let r = 0; r < NROLES; r++) flatCol[r] = pack(u[r] ? u[r] : flat && pair[10 << 4 | 15] || mean(plain[10], plain[15]));
 }
 
 // ----- the screen: a grey per pixel (the model) and the canvas -----
 // The Psion's picture lives at its own size in the model canvas (#model: what
 // screenshots and videos take); #screen shows it at the phone's full
-// resolution, scaled "sharp bilinear": blown up by a whole number with hard
-// edges, then smoothly to the exact size. Every Psion pixel comes out the
-// same size, with clean edges, at any scale (plain nearest-neighbour at 3.5x
-// makes some pixels 3 device pixels wide and some 4: jagged text).
+// resolution, by the Upscaling setting:
+// - Pixels: "sharp bilinear": blown up by a whole number with hard edges,
+//   then smoothly to the exact size. Every Psion pixel comes out the same
+//   size, with clean edges, at any scale (plain nearest-neighbour at 3.5x
+//   makes some pixels 3 device pixels wide and some 4: jagged text);
+// - Smooth: Scale2x twice (4x: the stair-steps of diagonals and curves
+//   filled in, straight edges and dithering kept), then smoothly to the size;
+// - High-res: xBRZ in a WebGL 2 shader, straight at the phone's size, with
+//   pictures (any grey but EIKON's four near a pixel) left sharp bilinear
+//   (xbrz.js, loaded when chosen; Smooth meanwhile, or without WebGL 2).
+// Below 2x (an iPhone upright) it is always Pixels. Then, if they are on,
+// the sharp redraws (layers, below): the boxes and lines, then the text.
+// the scripts and packs the page loads, by this build's stamp (the Atom lets
+// a browser keep them a week: a new firmware's must not be the old ones,
+// as Dan's iPhone kept last night's High-res, 24 Oct 2026). tools/
+// mkcastpage.py puts in the stamp; a page served as it is (tests) has none
+const ASSETS = "?v=__CAST_ASSETS__".indexOf("__") < 0 ? "?v=__CAST_ASSETS__" : "";
 const cv = $("#screen"), vctx = cv.getContext("2d", { alpha: false });
 const mc = $("#model"), ctx = mc.getContext("2d", { alpha: false });
 const up = document.createElement("canvas"), uctx = up.getContext("2d", { alpha: false });
+const UPSCALES = ["pixels", "smooth", "hires"];
+let upscale = store.get("upscale", null);
+if (UPSCALES.indexOf(upscale) < 0) { upscale = store.get("smooth", true) ? "smooth" : "pixels"; store.set("upscale", upscale); }
+let sharpText = !!store.get("sharpText", false), sharpChrome = !!store.get("sharpChrome", false);
+let upImg = null, upPx = null, mid = null;
+// what changed since the last present, in Psion pixels (dirtyAll: everything)
+let dirtyAll = true;
+const dirtyRects = [];
+function markDirty(x, y, w, h) {
+  if (dirtyAll) return;
+  if (x === undefined || dirtyRects.length >= 32) { dirtyAll = true; dirtyRects.length = 0; return; }
+  const x0 = Math.max(0, x), y0 = Math.max(0, y), x1 = Math.min(W, x + w), y1 = Math.min(H, y + h);
+  if (x1 > x0 && y1 > y0) dirtyRects.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+}
+// the display's own copy of the picture when a layer is on (dpx, dgrey: the
+// model's colours and greys, with the faces of buttons and title bars flat
+// and the redrawn text and symbols taken out); the shader's texture (tex:
+// those colours, with the grey in the alpha, for its photo guard); and a
+// canvas of dpx for the Pixels path
+let dpx = null, dgrey = null, tex = null, dcv = null, dctx = null, dImg = null, glStale = true;
+const layered = () => sharpText || sharpChrome;
+let xbrz = null, xbrzState = 0;                  // (0 not tried, 1 loading, 2 ready, -1 no WebGL 2)
+const perf = { n: 0, ms: 0, last: 0, max: 0, path: "" };
 let presentQ = false;
 function present() {
   if (presentQ) return;
   presentQ = true;
-  requestAnimationFrame(() => {
-    presentQ = false;
-    const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
-    if (!r.width) return;
-    const dw = Math.round(r.width * dpr), dh = Math.round(r.height * dpr);
-    if (cv.width !== dw || cv.height !== dh) { cv.width = dw; cv.height = dh; }
+  requestAnimationFrame(draw);
+}
+function draw() {
+  presentQ = false;
+  const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  if (!r.width) return;
+  const t0 = performance.now();
+  const dw = Math.round(r.width * dpr), dh = Math.round(r.height * dpr);
+  if (cv.width !== dw || cv.height !== dh) { cv.width = dw; cv.height = dh; }
+  const lay = layered(), rects = dirtyAll ? null : dirtyRects.slice();
+  dirtyAll = false; dirtyRects.length = 0;
+  if (lay) buildDisplay(rects);
+  const src = lay ? dpx : px, big = dw > W * 2;
+  let path = "";
+  if (upscale === "hires" && big && hiresReady()) {
+    if (rects && !glStale) { for (const q of rects) packTex(q); xbrz.upload(tex, W, H, rects); }
+    else { packTex(null); xbrz.upload(tex, W, H, null); }
+    glStale = false;
+    const c = xbrz.render(dw, dh, false);
+    if (c) { vctx.drawImage(c, 0, 0); path = "hires"; }
+  } else glStale = true;
+  if (!path && upscale !== "pixels" && big) {
+    if (up.width !== W * 4 || up.height !== H * 4 || !upImg) {
+      up.width = W * 4; up.height = H * 4;
+      upImg = uctx.createImageData(W * 4, H * 4);
+      upPx = new Uint32Array(upImg.data.buffer);
+      mid = new Uint32Array(W * 2 * H * 2);
+    }
+    scale2x(src, W, H, mid);
+    scale2x(mid, W * 2, H * 2, upPx);
+    uctx.putImageData(upImg, 0, 0);
+    vctx.imageSmoothingEnabled = true;
+    vctx.imageSmoothingQuality = "high";
+    vctx.drawImage(up, 0, 0, dw, dh);
+    path = "smooth";
+  }
+  if (!path) {
     const n = Math.max(1, Math.ceil(dw / W));
-    if (up.width !== W * n || up.height !== H * n) { up.width = W * n; up.height = H * n; }
+    if (up.width !== W * n || up.height !== H * n) { up.width = W * n; up.height = H * n; upImg = null; }
     uctx.imageSmoothingEnabled = false;
-    uctx.drawImage(mc, 0, 0, up.width, up.height);
+    uctx.drawImage(lay ? dcv : mc, 0, 0, up.width, up.height);
     vctx.imageSmoothingEnabled = true;
     vctx.drawImage(up, 0, 0, dw, dh);
+    path = "pixels";
+  }
+  if (picOn && picState === 2) { const t1 = performance.now(); picScan(rects); drawPictures(vctx, dw / W, dh / H); perf.pic = performance.now() - t1; }
+  if (lay) drawLayers(vctx, dw / W, dh / H);
+  const ms = performance.now() - t0;
+  perf.n++; perf.ms += ms; perf.last = ms; perf.max = Math.max(perf.max, ms); perf.path = path;
+}
+// (for the tests: the time a present takes, by the path it took; what the layers found)
+window.psicastPerf = perf;
+window.psicastDebug = {
+  runs: () => runs.map(r => ({ text: r.font.sym ? "<" + TextMatch.SYMBOLS[r.glyphs[0][0]] + ">" : r.text, x: r.start, y: r.top, font: r.font.name + r.font.cell })),
+  parts: () => chromeParts.map(p => p.tri || "k" + p.k), hires: () => xbrz, fonts: () => fontsState,
+  redraw: () => { markDirty(); present(); }
+};
+// ----- known pictures (0.22) -----
+// The picture pack (/screen/pictures.json, on the Atom only if one has been
+// put there: tools/mkpicpack.py): pictures some programs draw, each with
+// the Psion's greys, a few 16-pixel runs to find it by (their FNV-1a) and a
+// redrawn version. Each draw looks along the rows that changed for those
+// runs; where one is, the picture it belongs to is checked against the
+// screen, and if most of it is there (a game draws its name over one, a
+// dialog covers a corner) the redrawn one is shown in its place - all but
+// the pixels that differ, which stay the Psion's. A sprite (a pack's "m",
+// its mask: a chess piece, a Monopoly token) is only what it draws, and is
+// shown over the picture it is on (a board), whose pixels it covers are
+// then the board's own redrawn ones. The model, screenshots and videos are
+// untouched.
+let picOn = !!store.get("pictures", false), picState = 0;   // (0 not tried, 1 loading, 2 ready, -1 none)
+let picList = [], picRuns = new Map(), picLens = [], picFirst = new Uint8Array(65536), picMatch = [];
+function loadPictures() {
+  if (picState) return;
+  picState = 1;
+  fetch("/screen/pictures.json", { credentials: "same-origin" }).then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status)).then(buf => {
+    // (version 2: "PCP2", the JSON's length, the JSON, the images; 1: the JSON alone)
+    const u8 = new Uint8Array(buf);
+    let j, blobs = null;
+    if (u8[0] === 0x50 && u8[1] === 0x43 && u8[2] === 0x50 && u8[3] === 0x32) {
+      const n = new DataView(buf).getUint32(4, true);
+      j = JSON.parse(new TextDecoder().decode(u8.subarray(8, 8 + n)));
+      blobs = u8.subarray(8 + n);
+    } else j = JSON.parse(new TextDecoder().decode(u8));
+    for (const p of picList) if (p.img.src.startsWith("blob:")) URL.revokeObjectURL(p.img.src);
+    picList = []; picRuns = new Map(); picLens = []; picFirst = new Uint8Array(65536);
+    for (const q of (j && j.pics) || []) {
+      const b = atob(q.g), g = new Uint8Array(q.w * q.h);
+      for (let i = 0; i < g.length; i++) { const v = b.charCodeAt(i >> 1); g[i] = i & 1 ? v >> 4 : v & 15; }
+      const img = new Image();
+      img.onload = () => { markDirty(); present(); };
+      img.src = Array.isArray(q.img) ? URL.createObjectURL(new Blob([blobs.subarray(q.img[0], q.img[0] + q.img[1])], { type: j.type })) : q.img;
+      let m = null, n = q.w * q.h;
+      if (q.m) {
+        const mb = atob(q.m);
+        m = new Uint8Array(n); n = 0;
+        for (let i = 0; i < m.length; i++) n += m[i] = (mb.charCodeAt(i >> 3) >> (i & 7)) & 1;
+      }
+      const p = { app: q.app, id: q.id, w: q.w, h: q.h, g, m, n, img, a: (q.a || []).map(([y, x, hsh, len]) => [y, x, hsh >>> 0, len || 16]) };
+      picList.push(p);
+      // (looked for by its runs with the most in them: a run of white with a
+      // dot or two in it, as a photo's sky has, is in every page of text;
+      // they are still checked once it is found)
+      // (and the scan passes over 8 pixels the same, as most of a page is)
+      const busy = ([y, x, , len]) => { let k = 0; for (let i = y * q.w + x, e = i + len - 1; i < e; i++) k += g[i] !== g[i + 1]; return k; };
+      const flat8 = ([y, x]) => { const o = y * q.w + x; for (let i = 1; i < 8; i++) if (g[o + i] !== g[o]) return false; return true; };
+      const strong = p.a.filter(r => busy(r) >= 6 && !flat8(r));
+      for (const [y, x, hsh, len] of strong.length >= 3 ? strong : p.a.filter(r => !flat8(r) && busy(r) >= 2)) {
+        const k = len + ":" + hsh;
+        if (!picRuns.has(k)) picRuns.set(k, []);
+        picRuns.get(k).push({ p, x, y });
+        if (!picLens.includes(len)) picLens.push(len);
+        let v = 0;                                     // (its first 8 pixels, a nibble each, hashed to 16 bits: what the scan looks for first)
+        for (let i = 0; i < 8; i++) v = (v << 4 | g[y * q.w + x + i]) >>> 0;
+        picFirst[Math.imul(v, 0x9e3779b1) >>> 16] |= 1 << picLens.indexOf(len);
+      }
+    }
+    picState = picList.length ? 2 : -1;
+    picsUi(); markDirty(); present();
+  }).catch(e => {
+    if (e === 503) { picState = 0; setTimeout(loadPictures, 3000); return; }   // (the Atom still sending it to another viewer)
+    picState = -1; picsUi();
   });
+}
+// how much of p is on the screen at x, y (0..1), and a mask of where it is
+// not (null: all of it is); a sprite's, only where it draws; under any of
+// the sprites in "over", what they cover counts for neither
+function picCheck(p, x, y, wantMask, over) {
+  const cov = picCover(p, x, y, over);
+  let same = 0, n = 0;
+  const cs = new Uint16Array(p.w), cn = new Uint16Array(p.w), rs = new Uint16Array(p.h), rn = new Uint16Array(p.h);
+  for (let r = 0; r < p.h; r++) {
+    const sy = y + r, o = r * p.w;
+    for (let c = 0; c < p.w; c++) {
+      if ((p.m && !p.m[o + c]) || (cov && cov[o + c])) continue;
+      n++; cn[c]++; rn[r]++;
+      const sx = x + c;
+      if (sx >= 0 && sx < W && sy >= 0 && sy < H && grey[sy * W + sx] === p.g[o + c]) { same++; cs[c]++; rs[r]++; }
+    }
+  }
+  // (a picture partly hidden - Chess's background, tiled behind its board
+  // and toolbar and off the screen's edge: the most columns, or rows, in a
+  // run that each nearly all agree)
+  let part = null;
+  if (!p.m) {
+    const best = (s, t, len, other) => {
+      let b = null;
+      for (let i = 0; i < len; ) {
+        if (!t[i] || s[i] * 100 < t[i] * 92) { i++; continue; }
+        let j = i, ss = 0, tt = 0;
+        while (j < len && t[j] && s[j] * 100 >= t[j] * 92) { ss += s[j]; tt += t[j]; j++; }
+        if (!b || ss > b.same) b = { a: i, b: j, same: ss, n: tt };
+        i = j;
+      }
+      return b;
+    };
+    const pc = best(cs, cn, p.w), pr = best(rs, rn, p.h);
+    if (pc && (!pr || pc.same >= pr.same)) part = { x0: pc.a, x1: pc.b, y0: 0, y1: p.h, same: pc.same, n: pc.n };
+    else if (pr) part = { x0: 0, x1: p.w, y0: pr.a, y1: pr.b, same: pr.same, n: pr.n };
+  }
+  const share = n ? same / n : 0;
+  // (only that part shown, when not enough of the whole is there)
+  const only = part && !picWhole(p, share) ? part : null;
+  let mask = null;
+  if (wantMask && (same < n || only)) {
+    // (the Psion's own where they differ, and a pixel round: a line of text
+    // over the picture keeps the dots that happen to match the picture's)
+    const diff = new Uint8Array(p.w * p.h);
+    for (let r = 0; r < p.h; r++) {
+      const sy = y + r, o = r * p.w;
+      for (let c = 0; c < p.w; c++) {
+        if ((p.m && !p.m[o + c]) || (cov && cov[o + c])) continue;
+        const sx = x + c;
+        if (only && (c < only.x0 || c >= only.x1 || r < only.y0 || r >= only.y1)) diff[o + c] = 1;
+        else if (sx < 0 || sx >= W || sy < 0 || sy >= H || grey[sy * W + sx] !== p.g[o + c]) diff[o + c] = 1;
+      }
+    }
+    mask = document.createElement("canvas");
+    mask.width = p.w; mask.height = p.h;
+    const mc2 = mask.getContext("2d"), im = mc2.createImageData(p.w, p.h);
+    for (let r = 0; r < p.h; r++)
+      for (let c = 0; c < p.w; c++) {
+        let d = 0;
+        for (let j = Math.max(0, r - 1); j <= Math.min(p.h - 1, r + 1) && !d; j++)
+          for (let i = Math.max(0, c - 1); i <= Math.min(p.w - 1, c + 1); i++) if (diff[j * p.w + i]) { d = 1; break; }
+        im.data[(r * p.w + c) * 4 + 3] = d ? 0 : 255;
+      }
+    mc2.putImageData(im, 0, 0);
+  }
+  return { share, part, mask };
+}
+// which of p's pixels, at x, y, the smaller sprites in "over" draw on (null: none)
+function picCover(p, x, y, over) {
+  let cov = null;
+  for (const o of over || []) {
+    if (o.p === p || !o.p.m || o.p.n * 4 > p.n) continue;
+    const x0 = Math.max(x, o.x), x1 = Math.min(x + p.w, o.x + o.p.w), y0 = Math.max(y, o.y), y1 = Math.min(y + p.h, o.y + o.p.h);
+    if (x0 >= x1 || y0 >= y1) continue;
+    if (!cov) cov = new Uint8Array(p.w * p.h);
+    for (let yy = y0; yy < y1; yy++)
+      for (let xx = x0; xx < x1; xx++) if (o.p.m[(yy - o.y) * o.p.w + xx - o.x]) cov[(yy - y) * p.w + xx - x] = 1;
+  }
+  return cov;
+}
+// enough of it there to show: a sprite, or a small one, nearly all of it
+// (a die's five is most of its six); a larger picture, most of it, or a
+// good part that agrees nearly pixel for pixel (a sixth of it, and no
+// fewer than 3000 pixels: a corner of white agrees with any white)
+const picWhole = (p, share) => share >= (p.m || p.n < 1600 ? 0.9 : 0.7);
+const picPart = (p, k, least) => !p.m && p.n >= 1600 && k.part && k.part.same >= Math.max(3000, p.n / 6) && k.part.same >= least * k.part.n;
+const picEnough = (p, k) => picWhole(p, k.share) || picPart(p, k, 0.95);
+const picKeep = (p, k) => k.share >= (p.m || p.n < 1600 ? 0.8 : 0.5) || picPart(p, k, 0.92);
+function picRunsAt(p, x, y) {
+  let n = 0;
+  for (const [ay, ax, hsh, len] of p.a) {
+    if (x + ax < 0 || x + ax + len > W || y + ay < 0 || y + ay >= H) continue;   // (off the screen)
+    const o = (y + ay) * W + x + ax;
+    let h = 0x811c9dc5;
+    for (let i = 0; i < len; i++) h = Math.imul(h ^ grey[o + i], 0x01000193);
+    if ((h >>> 0) === hsh) n++;
+  }
+  return n;
+}
+function picScan(rects) {
+  const hit = (m, q) => q.x < m.x + m.p.w && m.x < q.x + q.w && q.y < m.y + m.p.h && m.y < q.y + q.h;
+  // the ones shown already: looked at again where the screen changed
+  picMatch = picMatch.filter(m => {
+    if (rects && !rects.some(q => hit(m, q))) return true;
+    const runs = picRunsAt(m.p, m.x, m.y);   // (and its runs still in place: a board moved agrees with itself by half)
+    if (m.p.m ? runs * 10 < m.p.a.length * 4 : runs < 2) return false;
+    return picKeep(m.p, picCheck(m.p, m.x, m.y, false, picMatch));
+  });
+  // new ones: the runs, along the rows that changed
+  let y0 = 0, y1 = H;
+  if (rects) { y0 = H; y1 = 0; for (const q of rects) { y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y + q.h); } }
+  const tried = new Set(), found = [];
+  for (let y = y0; y < y1; y++) {
+    const row = y * W;
+    let v = 0;
+    for (let i = 0; i < 7; i++) v = (v << 4 | grey[row + i]) >>> 0;
+    for (let x = 0; x + 8 <= W; x++) {
+      v = (v << 4 | grey[row + x + 7]) >>> 0;          // (the 8 pixels from x: most places start no run of any picture's)
+      if (v === ((v >>> 4 | v << 28) >>> 0)) continue;
+      const bits = picFirst[Math.imul(v, 0x9e3779b1) >>> 16];
+      if (!bits) continue;
+      for (let li = 0; li < picLens.length; li++) {
+        const len = picLens[li];
+        if (!(bits >> li & 1) || x + len > W) continue;
+        if (grey[row + x] === grey[row + x + 1] && grey[row + x] === grey[row + x + len - 1]) continue;   // (a flat run is no picture's)
+        let h = 0x811c9dc5;
+        for (let i = 0; i < len; i++) h = Math.imul(h ^ grey[row + x + i], 0x01000193);
+        const c = picRuns.get(len + ":" + (h >>> 0));
+        if (!c) continue;
+        for (const a of c) {
+          const px0 = x - a.x, py0 = y - a.y, key = a.p.app + a.p.id + "," + px0 + "," + py0;
+          if (tried.has(key)) continue;
+          if (a.p.m ? px0 < 0 || py0 < 0 || px0 + a.p.w > W || py0 + a.p.h > H : px0 + a.p.w < 24 || py0 + a.p.h < 24 || px0 > W - 24 || py0 > H - 24) continue;   // (a sprite whole; a picture may run off the edge)
+          tried.add(key);
+          if (picMatch.some(m => m.p === a.p && Math.abs(m.x - px0) < a.p.w && Math.abs(m.y - py0) < a.p.h)) continue;   // (it is shown already, there or near)
+          const runs = picRunsAt(a.p, px0, py0);
+          if (a.p.m ? runs * 10 < a.p.a.length * 6 : runs < 3) continue;   // (a sprite's, most of its runs each where it should be; a picture's, three: it may be mostly covered)
+          found.push({ p: a.p, x: px0, y: py0 });
+        }
+      }
+    }
+  }
+  // the sprites first, so that what they cover of a board does not count against it
+  found.sort((a, b) => a.p.n - b.p.n);
+  for (const f of found) {
+    const k = picCheck(f.p, f.x, f.y, false, picMatch.concat(found.filter(o => o.p.m && o.ok !== false)));
+    f.ok = picEnough(f.p, k);
+    if (f.ok) { f.share = k.share; picMatch.push(f); }
+  }
+  // two of a size that overlap much (Monopoly's title, and its winner screen,
+  // which is the title with words on it; a die's faces): the one that agrees
+  // the more. A sprite on a board is no rival of it
+  const area = m => m.p.w * m.p.h;
+  const over = (a, b) => Math.max(0, Math.min(a.x + a.p.w, b.x + b.p.w) - Math.max(a.x, b.x)) *
+    Math.max(0, Math.min(a.y + a.p.h, b.y + b.p.h) - Math.max(a.y, b.y));
+  const rival = (a, b) => a !== b && Math.max(area(a), area(b)) < 4 * Math.min(area(a), area(b)) && over(a, b) * 2 > Math.min(area(a), area(b));
+  picMatch = picMatch.filter(m => !picMatch.some(o => rival(m, o) &&
+    ((o.share || 0) > (m.share || 0) || ((o.share || 0) === (m.share || 0) && (o.p.n > m.p.n || (o.p.n === m.p.n && picMatch.indexOf(o) < picMatch.indexOf(m)))))));
+  // what each shows, in the order drawn: the pictures, the one that agrees
+  // the more over the other (a board over the background tiled behind it,
+  // whose pixels that happen to agree would show through), then the sprites
+  // on them, the larger first
+  picMatch.sort((a, b) => (!!a.p.m - !!b.p.m) || (a.p.m ? area(b) - area(a) : (a.share || 0) - (b.share || 0)));
+  for (const m of picMatch) {
+    if (rects && m.mask !== undefined && !rects.some(q => hit(m, q))) continue;   // (what did not change, as it was)
+    const k = picCheck(m.p, m.x, m.y, true, picMatch);
+    m.mask = k.mask; m.share = k.share; m.part = k.part && [k.part.x0, k.part.y0, k.part.x1, k.part.y1, Math.round(k.part.same / k.part.n * 100)];
+  }
+}
+let picTmp = null;
+function drawPictures(c, sx, sy) {
+  for (const m of picMatch) {
+    const img = m.p.img;
+    if (!img.complete || !img.naturalWidth) continue;
+    const dx = Math.round(m.x * sx), dy = Math.round(m.y * sy), dw = Math.round((m.x + m.p.w) * sx) - dx, dh = Math.round((m.y + m.p.h) * sy) - dy;
+    c.imageSmoothingEnabled = true; c.imageSmoothingQuality = "high";
+    if (!m.mask) { c.drawImage(img, dx, dy, dw, dh); continue; }
+    // (all but the Psion's own pixels over it)
+    if (!picTmp) picTmp = document.createElement("canvas");
+    if (picTmp.width < dw || picTmp.height < dh) { picTmp.width = Math.max(picTmp.width, dw); picTmp.height = Math.max(picTmp.height, dh); }
+    const t = picTmp.getContext("2d");
+    t.globalCompositeOperation = "copy";
+    t.imageSmoothingEnabled = true; t.imageSmoothingQuality = "high";
+    t.drawImage(img, 0, 0, dw, dh);
+    t.globalCompositeOperation = "destination-in";
+    t.imageSmoothingEnabled = false;
+    t.drawImage(m.mask, 0, 0, dw, dh);
+    t.globalCompositeOperation = "source-over";
+    c.drawImage(picTmp, 0, 0, dw, dh, dx, dy, dw, dh);
+  }
+}
+function picsUi() {
+  $("#tPics").classList.toggle("on", picOn);
+  $("#lPics").classList.toggle("off", picState === -1);
+  $("#picsNote").textContent = picState === -1 ? "No picture pack on this Atom" :
+    "Pictures that some programs draw (PsiTris, Chess, Monopoly) shown redrawn in colour";
+}
+window.psicastPictureMask = i => picMatch[i] && picMatch[i].mask ? picMatch[i].mask.toDataURL() : null;   // (for the tests: where match i shows the Psion's own)
+window.psicastPictures = () => picMatch.map(m => ({ app: m.p.app, id: m.p.id, x: m.x, y: m.y, whole: !m.mask, share: m.share, part: m.part }));
+
+function hiresReady() {
+  if (xbrzState === 2) {
+    if (!xbrz.lost) return true;
+    return false;                                 // (lost: Smooth until it is restored)
+  }
+  if (xbrzState === 0) loadXbrz();
+  return false;
+}
+function loadXbrz() {
+  if (xbrzState !== 0) return;
+  if (!webgl2()) { xbrzState = -1; upscaleUi(); return; }
+  xbrzState = 1;
+  const s = document.createElement("script");
+  s.src = "/screen/xbrz.js" + ASSETS;
+  s.onload = () => {
+    try { xbrz = window.Xbrz.create(() => { glStale = true; present(); }); } catch (e) { xbrz = null; }
+    xbrzState = xbrz ? 2 : -1;
+    upscaleUi();
+    glStale = true; present();
+  };
+  s.onerror = () => { xbrzState = 0; };
+  document.head.appendChild(s);
+}
+let gl2 = null;
+function webgl2() {
+  if (gl2 === null) {
+    try { const c = document.createElement("canvas"), g = c.getContext("webgl2"); gl2 = !!g; const x = g && g.getExtension("WEBGL_lose_context"); if (x) x.loseContext(); }
+    catch (e) { gl2 = false; }
+  }
+  return gl2;
+}
+// the texture for rect q (null: all): the display's colours, the grey * 17 in the alpha
+function packTex(q) {
+  const s = layered() ? dpx : px, g = layered() ? dgrey : grey;
+  if (!tex || tex.length !== W * H) { tex = new Uint32Array(W * H); q = null; }
+  const x0 = q ? q.x : 0, y0 = q ? q.y : 0, x1 = q ? q.x + q.w : W, y1 = q ? q.y + q.h : H;
+  for (let y = y0; y < y1; y++) for (let o = y * W + x0, e = y * W + x1; o < e; o++)
+    tex[o] = little ? (s[o] & 0xffffff | (g[o] * 17) << 24) >>> 0 : (s[o] & 0xffffff00 | g[o] * 17) >>> 0;
+}
+// Scale2x (AdvMAME2x): each pixel E becomes four; a corner takes its two
+// neighbours' colour where they agree and the edge is not straight (B != H,
+// D != F). Only exact colours are compared, so text keeps its greys
+function scale2x(s, w, h, d) {
+  const w2 = w * 2;
+  for (let y = 0; y < h; y++) {
+    const row = y * w, up = y > 0 ? row - w : row, dn = y + 1 < h ? row + w : row, o0 = y * 2 * w2;
+    for (let x = 0; x < w; x++) {
+      const e = s[row + x], b = s[up + x], hh = s[dn + x];
+      const dd = s[row + (x > 0 ? x - 1 : x)], f = s[row + (x + 1 < w ? x + 1 : x)];
+      const o = o0 + x * 2;
+      if (b !== hh && dd !== f) {
+        d[o] = dd === b ? dd : e;
+        d[o + 1] = b === f ? f : e;
+        d[o + w2] = dd === hh ? dd : e;
+        d[o + w2 + 1] = hh === f ? f : e;
+      } else {
+        d[o] = d[o + 1] = d[o + w2] = d[o + w2 + 1] = e;
+      }
+    }
+  }
 }
 let W = 640, H = 240, grey = new Uint8Array(W * H).fill(15), img = ctx.createImageData(W, H), px = new Uint32Array(img.data.buffer);
 // the role pass's results: a role per pixel (R_*, 0 for none), the grey each was found on, and its work stack
@@ -384,6 +808,7 @@ function resize(w, h) {
   grey = new Uint8Array(w * h).fill(15);
   role = new Uint8Array(w * h); roleGrey = new Uint8Array(w * h); roleStack = new Int32Array(w * h);
   img = ctx.createImageData(w, h); px = new Uint32Array(img.data.buffer);
+  dpx = null; tex = null; markDirty(); layersReset();
   fitFrame();
   return true;
 }
@@ -423,18 +848,24 @@ function paintRow(y, x0, x1, stale) {
     px[o] = lut[r << 8 | v << 4 | u];
   }
 }
+// (the role pass runs for a theme with colours for the parts, or for the sharp boxes and lines)
+const rolesOn = () => !!theme.ui || sharpChrome;
 function paintAll() {
-  if (theme.ui) return runRoles(true);         // (the whole picture: its roles straight away, so it never shows grey first)
+  textAll();
+  if (rolesOn()) return runRoles(true);        // (the whole picture: its roles straight away, so it never shows grey first)
   for (let y = 0; y < H; y++) paintRow(y, 0, W, false);
   if (iconsOn()) { iconHits = icons.find(grey, W, H); icons.paint(px, W, iconHits, little); }
   ctx.putImageData(img, 0, 0);
+  markDirty();
   present();
 }
 function paintRect(x, y, w, h) {
-  const ui = !!theme.ui;
+  const ui = rolesOn();
   for (let r = y; r < y + h; r++) paintRow(r, x, x + w, ui);
   ctx.putImageData(img, 0, 0, x, y, w, h);
+  markDirty(x, y, w, h);
   iconPass(x, y, w, h);
+  textChanged(x, y, w, h);
   present();
   if (ui) rolesSoon();
 }
@@ -464,14 +895,14 @@ function loadIcons() {
   icons = name && packs[name] || null;
   if (!name || name in packs) return;
   packs[name] = null;
-  const go = () => fetch("/screen/" + (PACKS[name] || name + "icons.json"), { credentials: "same-origin" })
+  const go = () => fetch("/screen/" + (PACKS[name] || name + "icons.json") + ASSETS, { credentials: "same-origin" })
     .then(r => r.ok ? r.json() : Promise.reject(r.status))
     .then(p => { packs[name] = IconMatch.create(p); if (packOf(theme) === name) { icons = packs[name]; if (haveScreen) paintAll(); } })
     .catch(() => {});
   if (!matcher) {
     matcher = new Promise((ok, no) => {
       const s = document.createElement("script");
-      s.src = "/screen/iconmatch.js";
+      s.src = "/screen/iconmatch.js" + ASSETS;
       s.onload = ok;
       s.onerror = () => { matcher = null; for (const k in packs) if (!packs[k]) delete packs[k]; no(); };
       document.head.appendChild(s);
@@ -491,7 +922,7 @@ function iconPass(x, y, w, h) {                  // after a rect is painted: its
   iconHits = iconHits.filter(t => !(t.x >= x0 && t.x + t.icon.w <= x1 && t.y + t.r0 >= y0 && t.y + t.r1 <= y1)).concat(hits);
   if (!hits.length) return;
   icons.paint(px, W, hits, little);
-  for (const t of hits) ctx.putImageData(img, 0, 0, t.x, t.y + t.r0, t.icon.w, t.r1 - t.r0);
+  for (const t of hits) { ctx.putImageData(img, 0, 0, t.x, t.y + t.r0, t.icon.w, t.r1 - t.r0); markDirty(t.x, t.y + t.r0, t.icon.w, t.r1 - t.r0); }
 }
 // rows y0..y1-1 of columns x..x+w-1 have moved by dy (to d0..d1-1): the
 // pictures whole in them move too, those cut by the edges go, and the
@@ -544,21 +975,28 @@ function rolesSoon() {
 function runRoles(findIcons) {                   // (findIcons: the whole picture is new)
   clearTimeout(roleTimer);
   roleTimer = 0;
-  if (!theme.ui) return;
+  if (!rolesOn()) return;
   roleLast = performance.now();
-  findRoles(grey, W, H, role, roleStack);
+  chromeParts = [];
+  findRoles(grey, W, H, role, roleStack, sharpChrome ? chromeParts : null);
   roleGrey.set(grey);
+  if (layered()) rebuildInk();
   for (let y = 0; y < H; y++) paintRow(y, 0, W, false);
   if (iconsOn()) {
     if (findIcons) iconHits = icons.find(grey, W, H);
     icons.paint(px, W, iconHits, little);
   }
   ctx.putImageData(img, 0, 0);
+  markDirty();
   present();
 }
-// fills role (w x h) from the greys g; stack is work space of the same size
-function findRoles(g, w, h, role, stack) {
+// fills role (w x h) from the greys g; stack is work space of the same size;
+// parts (if given) gets the shapes found, for the sharp boxes and lines
+function findRoles(g, w, h, role, stack, shapes) {
   role.fill(0);
+  // (a shape: a box x0,y0..x1,y1 whose outer k pixels are its border, and
+  // rows across it that are lines; or tri: a solid triangle, an arrow)
+  const shape = shapes ? o => shapes.push(o) : () => {};
   const blk = v => v <= 1, dark = v => v >= 4 && v <= 6, mid = v => v >= 7 && v <= 11, white = v => v === 15, light = v => v >= 10;
   const WHITE = [15, 15];
   function rowShare(y, x0, x1, test) {         // the share of row y's pixels x0..x1 that pass test
@@ -755,6 +1193,7 @@ function findRoles(g, w, h, role, stack) {
       const all = (r - x0 + 1) * (b - y + 1);
       if (n < .5 * all || wh < .02 * all || all - n - wh > .08 * all) continue;
       for (let k = yo; k <= bo; k++) for (let q = k * w + xo, e = k * w + ro; q <= e; q++) if (inkOrBlk(g[q])) role[q] = rr;
+      shape({ x0: xo, y0: yo, x1: ro, y1: bo, k: 1 });
     }
   }
   // the scroll bars: columns x and x + 22 black for 40 rows or more; down it,
@@ -762,6 +1201,64 @@ function findRoles(g, w, h, role, stack) {
   // or white (the shaft), and the rest the parts, each a button (white along
   // its top and down its left, dark grey down its right) round a light grey
   // face. Only a bar with a part like that counts
+  // the arrows in x0,y0..x1,y1: a solid triangle of one ink (0 to 6), 5 to
+  // 16 across, pointing up, down, left or right (each row, or column, one
+  // run, centred, growing to the base), with no ink round it
+  function arrows(x0, y0, x1, y1) {
+    if (!shapes) return;
+    const seen = new Set();
+    for (let y = y0; y <= y1; y++) for (let x = x0, o = y * w + x0; x <= x1; x++, o++) {
+      if (g[o] > 6 || seen.has(o)) continue;
+      const c = g[o], q = [o], px = [];
+      let bx0 = x, bx1 = x, by0 = y, by1 = y, ok = true;
+      seen.add(o);
+      while (q.length && ok) {
+        const t = q.pop(), ty = (t / w) | 0, tx = t - ty * w;
+        px.push(t);
+        if (tx < bx0) bx0 = tx; if (tx > bx1) bx1 = tx; if (ty < by0) by0 = ty; if (ty > by1) by1 = ty;
+        if (px.length > 160 || bx1 - bx0 > 16 || by1 - by0 > 16) ok = false;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const nx = tx + dx, ny = ty + dy, n = ny * w + nx;
+          if (nx < x0 || nx > x1 || ny < y0 || ny > y1) { if (g[n] === c) ok = false; continue; }
+          if (g[n] === c && !seen.has(n)) { seen.add(n); q.push(n); }
+        }
+      }
+      if (!ok || px.length < 9) continue;
+      const bw = bx1 - bx0 + 1, bh = by1 - by0 + 1;
+      // no ink in the ring round it
+      for (let k = bx0 - 1; k <= bx1 + 1 && ok; k++) ok = g[(by0 - 1) * w + k] > 6 && g[(by1 + 1) * w + k] > 6;
+      for (let k = by0; k <= by1 && ok; k++) ok = g[k * w + bx0 - 1] > 6 && g[k * w + bx1 + 1] > 6;
+      if (!ok) continue;
+      // its runs: along rows (up, down) or columns (left, right)
+      const runs = (rowsOf) => {
+        const n = rowsOf ? bh : bw, len = rowsOf ? bw : bh, out = [];
+        for (let i = 0; i < n; i++) {
+          let a = -1, b = -1, gaps = 0;
+          for (let j = 0; j < len; j++) {
+            const v = rowsOf ? g[(by0 + i) * w + bx0 + j] : g[(by0 + j) * w + bx0 + i];
+            if (v === c) { if (a < 0) a = j; else if (b !== j - 1) gaps++; b = j; }
+          }
+          if (a < 0 || gaps) return null;
+          if (Math.abs(a + b - (len - 1)) > 1) return null;
+          out.push(b - a + 1);
+        }
+        return out;
+      };
+      const mono = (r, len) => {                  // growing to a full base at one end: +1 from the tip, -1 the other way
+        let inc = true, dec = true;
+        for (let i = 1; i < r.length; i++) { if (r[i] < r[i - 1]) inc = false; if (r[i] > r[i - 1]) dec = false; }
+        if (inc && r[0] <= 2 && r[r.length - 1] === len) return 1;
+        if (dec && r[r.length - 1] <= 2 && r[0] === len) return -1;
+        return 0;
+      };
+      let tri = null;
+      const rr = bw >= 5 && bh >= 3 ? runs(true) : null, cr = bh >= 5 && bw >= 3 ? runs(false) : null;
+      const mr = rr ? mono(rr, bw) : 0, mcl = cr ? mono(cr, bh) : 0;
+      if (mr) tri = mr > 0 ? "up" : "down";
+      else if (mcl) tri = mcl > 0 ? "left" : "right";
+      if (tri) shape({ tri, x0: bx0, y0: by0, x1: bx1, y1: by1, c, px });
+    }
+  }
   const sKind = new Uint8Array(h);              // per row: 1 black across, 2 shaft, 0 other
   function scrollBar(x, ya, yb) {
     const r = x + 22;
@@ -789,6 +1286,8 @@ function findRoles(g, w, h, role, stack) {
     }
     if (!parts.length) return;
     for (const [y, e, p] of parts) flood(x + 3, y + 2, r - 3, e - 2, p, R_SFACE, edges(x + 3, y + 2, r - 3, e - 2));
+    shape({ x0: x, y0: ya, x1: r, y1: yb, k: 1 });
+    for (const [y, e] of parts) { shape({ x0: x, y0: y - 1, x1: r, y1: e + 1, k: 3 }); arrows(x + 3, y + 2, r - 3, e - 2); }
     if (shaft) for (let y = ya; y <= yb; y++) if (sKind[y] === 2) for (let q = y * w + x + 1, e = y * w + r - 1; q <= e; q++) role[q] = R_SHAFT;
   }
   // (found from every 39th row, as each is at least 40 high; sDone: per
@@ -827,6 +1326,7 @@ function findRoles(g, w, h, role, stack) {
       if (!p) continue;
       flood(x + 3, y + 3, r - 3, b - 3, p, R_FACE, edges(x + 3, y + 3, r - 3, b - 3));
       dimmed(x + 3, y + 3, r - 3, b - 3);
+      shape({ x0: x, y0: y, x1: r, y1: b, k: 3 });
       x = r;
     }
   }
@@ -850,7 +1350,7 @@ function findRoles(g, w, h, role, stack) {
             rowShare(b - 1, Math.max(lx, xt + 2), w - 2, dark) < .9) continue;
         const p = lightAt(Math.max(lx, xt + 3), y + 3, w - 4, b - 3);
         if (!p) continue;
-        found.push([y, b, p]);
+        found.push([y, b, p, lx]);
         y = b - 1;
       } else if (blk(g[o + w - 1]) && blk(g[o + w - 16]) && g[o + 2 * w - 1] === 15 && g[o + 3 * w - 1] === 15) {
         const t = (y + 2) * w;
@@ -860,7 +1360,7 @@ function findRoles(g, w, h, role, stack) {
         if (!blk(g[b * w + w - 2]) || b - y < 12 || b - y > 100 || w - lx < 16) continue;
         if (rowShare(y, lx, w - 1, blk) < .9 || rowShare(y + 1, lx, w - 1, blk) < .9 || rowShare(b, lx, w - 1, blk) < .9 ||
             colShare(w - 1, y, b, blk) < .9) continue;
-        found.push([y, b, null]);
+        found.push([y, b, null, lx]);
         y = b - 1;
       }
     }
@@ -918,14 +1418,25 @@ function findRoles(g, w, h, role, stack) {
     for (let y = t0; y < tl; y++) for (let o = y * w + x + 5, e = y * w + r - 5; o <= e; o++) role[o] = isP(o) ? R_TITLE : g[o] <= 6 ? R_TTEXT : 0;
     // the body's white, from its edges in: a white box inside (an edit box, in its own border) stays white
     flood(x + 5, tl + 1, r - 5, yb, WHITE, R_DLG, edges(x + 5, tl + 1, r - 5, yb));
+    border(x, ya, r, yb, [tl]);
     return true;
   }
+  // (its top only as far as was checked: a menu bar's pane hangs from its title)
   // a menu pane whose left border runs down column x from row ya to yb: a
   // dialog's border round a white body, with no title bar. Its top may be
   // only partly there (a menu bar's pane hangs from its title, which is
   // narrower, and what is beside the title is someone else's), so the top is
   // checked at its left and the right border in the pane's lower half; the
   // white, from the left and the bottom, has to be most of it
+  // the thick border round a dialog or a menu whose left side (the rows
+  // with its signature) runs from ya to yb: 4 rows above (if they are on
+  // the screen), its bottom where black rows end it
+  function border(x, ya, r, yb, rows, tx1) {      // (tx1: the top's right-hand end, if not r)
+    let y1 = -1;
+    for (let y = yb + 1; y <= Math.min(h - 1, yb + 8); y++) if (rowShare(y, x + 2, r - 2, blk) >= .8) y1 = y;
+    shape({ x0: x, y0: Math.max(0, ya - 4), x1: r, y1: y1 >= 0 ? y1 : yb, k: 5, noTop: ya < 4, noBottom: y1 < 0, tx1: tx1 || r,
+            rows: rows || [], rx0: x + 5, rx1: r - 5 });
+  }
   function menu(x, ya, yb) {
     if (ya < 4 || yb >= h - 1) return;
     if (rowShare(ya - 4, x, x + 20, blk) < 1 || rowShare(ya - 3, x, x + 20, blk) < 1 || rowShare(ya - 2, x + 4, x + 20, white) < 1 ||
@@ -949,8 +1460,9 @@ function findRoles(g, w, h, role, stack) {
     if (flood(x + 5, t0, r - 5, yb, WHITE, R_MENU, push => {
       for (let y = t0; y <= yb; y++) push(x + 5, y);
       for (let c = x + 5; c <= r - 5; c++) push(c, yb);
-    }) < .4 * all)
+    }) < .4 * all) {
       for (let y = t0; y <= yb; y++) for (let o = y * w + x + 5, e = y * w + r - 5; o <= e; o++) if (role[o] === R_MENU) role[o] = 0;
+    } else { border(x, ya, r, yb, null, x + 20); arrows(Math.max(x + 6, r - 40), t0, r - 6, yb); }
   }
   scrollBars();
   selections(blk, R_SEL, w);
@@ -975,7 +1487,7 @@ function findRoles(g, w, h, role, stack) {
       // its box is still there; the buttons whose right-hand ends still show)
       for (const k of toolMemo.btns) if (toolStill(...k)) found.push(k);
     } else continue;
-    for (const [y, b, p] of found) toolFace(xt, y, b, p);
+    for (const [y, b, p, lx] of found) { toolFace(xt, y, b, p); shape({ x0: Math.max(lx, xt + 1), y0: y, x1: w - 1, y1: b, k: p ? 3 : 2 }); }
     // its background: the white round its buttons, from its top and down its
     // right-hand side (a menu or a dialog over it has its own border there, so
     // its white is never reached; the left may be a menu's, with text on it)
@@ -983,6 +1495,7 @@ function findRoles(g, w, h, role, stack) {
       for (let x = xt + 1; x <= w - 2; x++) push(x, 1);
       for (let y = 1; y <= h - 2; y++) push(w - 2, y);
     });
+    shape({ x0: xt, y0: 0, x1: w - 1, y1: h - 1, k: 1 });
     bar = xt;
     break;
   }
@@ -1099,6 +1612,225 @@ if (window.visualViewport) {
   vv.addEventListener("resize", fit);
   vv.addEventListener("scroll", fit);
 }
+
+// ----- the sharp redraws: boxes and lines, then text -----
+// Optional, off as standard (Viewing: Redraw boxes and lines sharply,
+// Redraw text sharply), with any Upscaling and any theme; screenshots and
+// videos are the model's, untouched.
+// - Boxes and lines: the parts the role pass finds (above: dialogs' and
+//   menus' borders, command and toolbar buttons, scroll bars, selections,
+//   the toolbar's box; and the arrows in scroll bars and by menus'
+//   cascades) are drawn crisp over the upscaled picture: each border's
+//   pixels as they are on the Psion, as rectangles on whole device pixels
+//   (a 1-pixel line stays 1 Psion pixel wide, with hard edges), the faces
+//   of buttons and title bars one flat colour instead of the 50% dither,
+//   and the arrows (and the Eikon font's: choice lists, cascades, the tick)
+//   as clean shapes. What it doesn't find (pictures, documents) it leaves.
+// - Text: textmatch.js finds the text EIKON drew in the ROM fonts
+//   (eonfonts.json: both loaded from the Atom the first time either is
+//   on), exactly, and it is drawn again in the phone's fonts: each letter
+//   centred where the Psion's is, at a size between the two fonts' capital
+//   and x-heights, in the colour the theme gives the Psion's, cut to the
+//   run's box; the Psion's own letters are taken out of the picture under
+//   it. Lines are looked at again only where the picture changed (rows
+//   round each change, a moment after it, as the role pass), so the rest
+//   stays as it is.
+let chromeParts = [], inkMask = null, runs = [];
+let tmText = null, tmSym = null, fontsState = 0;  // (0 not loaded, 1 loading, 2 ready, -1 not in this build)
+let maxCell = 18, matchY0 = 1e9, matchY1 = -1, matchTimer = 0, matchLast = 0;
+const FLATR = new Uint8Array(NROLES);
+FLATR[R_TITLE] = FLATR[R_FACE] = FLATR[R_SFACE] = 1;
+const wantRun = r => r.font.sym ? sharpChrome : sharpText;
+function buildDisplay(rects) {
+  if (!dpx || dpx.length !== W * H) {
+    dcv = document.createElement("canvas"); dcv.width = W; dcv.height = H;
+    dctx = dcv.getContext("2d", { alpha: false });
+    dImg = dctx.createImageData(W, H);
+    dpx = new Uint32Array(dImg.data.buffer); dgrey = new Uint8Array(W * H);
+    rects = null; glStale = true;
+  }
+  if (!inkMask || inkMask.length !== W * H) rebuildInk();
+  const list = rects || [{ x: 0, y: 0, w: W, h: H }];
+  for (const q of list) for (let y = q.y; y < q.y + q.h; y++) {
+    const o = y * W + q.x;
+    dpx.set(px.subarray(o, o + q.w), o);
+    dgrey.set(grey.subarray(o, o + q.w), o);
+    if (sharpChrome) for (let i = o, e = o + q.w; i < e; i++) {
+      const r = role[i], v = grey[i];
+      if (FLATR[r] && roleGrey[i] === v && (v === 10 || v === 15)) dpx[i] = flatCol[r];
+    }
+  }
+  for (const q of list) for (let y = q.y; y < q.y + q.h; y++) for (let o = y * W + q.x, e = o + q.w; o < e; o++) if (inkMask[o]) erase(o);
+  for (const q of list) dctx.putImageData(dImg, 0, 0, q.x, q.y, q.w, q.h);
+}
+// a pixel of redrawn ink takes the background's colour: from 2 away first
+// (a checkerboard keeps its parity), else nearer, else further
+const ERASE = [[2, 0], [-2, 0], [0, 2], [0, -2], [1, 1], [-1, -1], [1, -1], [-1, 1], [4, 0], [-4, 0], [0, 4], [0, -4], [3, 1], [-3, -1]];
+function erase(o) {
+  const y = (o / W) | 0, x = o - y * W;
+  for (const [dx, dy] of ERASE) {
+    const nx = x + dx, ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+    const n = ny * W + nx;
+    if (!inkMask[n]) { dpx[o] = dpx[n]; dgrey[o] = dgrey[n]; return; }
+  }
+}
+function rebuildInk() {
+  if (!inkMask || inkMask.length !== W * H) inkMask = new Uint8Array(W * H); else inkMask.fill(0);
+  for (const r of runs) if (wantRun(r)) for (const i of r.px) inkMask[i] = 1;
+  if (sharpChrome) for (const p of chromeParts) if (p.tri) for (const i of p.px) inkMask[i] = 1;
+}
+function dirtyRun(r) { markDirty(r.start - 1, r.top, r.end - r.start + 2, r.font.cell); }
+function layersReset() { runs = []; chromeParts = []; inkMask = null; matchY0 = 1e9; matchY1 = -1; }
+function textAll() { matchSoon(0, H); }
+function matchSoon(y0, y1) {
+  if (!layered() || fontsState !== 2) return;
+  matchY0 = Math.min(matchY0, Math.max(0, y0)); matchY1 = Math.max(matchY1, Math.min(H, y1));
+  if (!matchTimer) matchTimer = setTimeout(runMatch, Math.max(30, matchLast + 150 - performance.now()));
+}
+const runKey = r => r.font.name + r.font.cell + "." + r.font.bold + "," + r.top + "," + r.start + "," + r.c + "," + r.text;
+function runMatch() {
+  clearTimeout(matchTimer); matchTimer = 0;
+  const y0 = matchY0, y1 = matchY1;
+  matchY0 = 1e9; matchY1 = -1;
+  if (!layered() || fontsState !== 2 || y1 <= y0) return;
+  const t0 = performance.now(), R = { x: 0, y: y0, w: W, h: y1 - y0 };
+  let found = [];
+  if (sharpText) found = found.concat(tmText.find(grey, W, H, R));
+  if (sharpChrome) found = found.concat(tmSym.find(grey, W, H, R));
+  // (the runs wholly in those rows are replaced; one found again as it was is kept)
+  const inside = r => r.top >= R.y && r.top + r.font.cell <= R.y + R.h, old = new Map(), next = [];
+  for (const r of runs) { if (inside(r)) old.set(runKey(r), r); else next.push(r); }
+  for (const r of found) {
+    const k = runKey(r), o = old.get(k);
+    if (o) { next.push(o); old.delete(k); } else { next.push(r); dirtyRun(r); }
+  }
+  for (const r of old.values()) dirtyRun(r);
+  runs = next;
+  rebuildInk();
+  matchLast = performance.now();
+  perf.match = matchLast - t0; perf.matchRows = R.h; perf.runs = runs.length;
+  present();
+}
+// a rect of the picture changed: the runs in it that are no longer there
+// go now, and its rows (and a text line's either side) are looked at soon
+function textChanged(x, y, w, h) {
+  if (!layered() || fontsState !== 2) return;
+  let gone = false;
+  runs = runs.filter(r => {
+    if (r.start >= x + w || r.end <= x || r.top >= y + h || r.top + r.font.cell <= y) return true;
+    let n = 0;
+    for (let k = r.top; k < r.top + r.font.cell; k++) for (let o = k * W + r.start, e = k * W + r.end; o < e; o++) if (grey[o] === r.c) n++;
+    let ok = n === r.px.length;
+    for (let i = 0; i < r.px.length && ok; i++) ok = grey[r.px[i]] === r.c;
+    if (!ok) { dirtyRun(r); gone = true; }
+    return ok;
+  });
+  if (gone) rebuildInk();
+  matchSoon(y - maxCell, y + h + maxCell);
+}
+// rows y0..y1-1 of columns x..x+w-1 moved by dy (to d0..d1-1): the runs whole in them move too
+function textScroll(x, w, y0, y1, dy, d0, d1) {
+  if (!layered() || fontsState !== 2) return;
+  runs = runs.filter(r => {
+    const b = r.top + r.font.cell;
+    if (r.end <= x || r.start >= x + w || b <= Math.min(y0, d0) || r.top >= Math.max(y1, d1)) return true;
+    if (r.start >= x && r.end <= x + w && r.top >= y0 && b <= y1 && r.top + dy >= d0 && b + dy <= d1) {
+      r.top += dy;
+      r.px = r.px.map(i => i + dy * W);
+      return true;
+    }
+    return false;
+  });
+  rebuildInk();
+  matchSoon(d0 - maxCell, d0 + maxCell);
+  matchSoon(d1 - maxCell, d1 + maxCell);
+}
+function loadFonts() {
+  if (fontsState !== 0) return;
+  fontsState = 1;
+  const js = window.TextMatch ? Promise.resolve() : new Promise((ok, no) => {
+    const s = document.createElement("script");
+    s.src = "/screen/textmatch.js" + ASSETS; s.onload = ok; s.onerror = () => no(0);
+    document.head.appendChild(s);
+  });
+  js.then(() => fetch("/screen/eonfonts.json" + ASSETS, { credentials: "same-origin" }))
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(p => {
+      tmText = TextMatch.create(p, { only: "text" }); tmSym = TextMatch.create(p, { only: "sym" });
+      maxCell = Math.max(tmText.maxCell, tmSym.maxCell);
+      fontsState = 2;
+      layersUi();
+      textAll();
+    })
+    .catch(e => { fontsState = e === 404 ? -1 : 0; layersUi(); });
+}
+// ...the drawing, over the upscaled picture (sx, sy: device pixels a Psion
+// pixel): sharp.js, loaded the first time either is on
+let sharpJs = 0;                                 // (0 not loaded, 1 loading, 2 ready)
+function loadSharp() {
+  if (sharpJs) return;
+  sharpJs = 1;
+  const s = document.createElement("script");
+  s.src = "/screen/sharp.js" + ASSETS;
+  s.onload = () => { sharpJs = 2; markDirty(); present(); };
+  s.onerror = () => { sharpJs = 0; };
+  document.head.appendChild(s);
+}
+function drawLayers(c, sx, sy) {
+  if (sharpJs !== 2) return loadSharp();
+  PsiSharp.draw(c, sx, sy, { W, H, px, dpx, little, parts: sharpChrome ? chromeParts : [], runs: fontsState === 2 ? runs : [],
+    text: sharpText, chrome: sharpChrome, symbols: fontsState === 2 ? TextMatch.SYMBOLS : {} });
+}
+// the settings
+function upscaleUi() {
+  document.querySelectorAll("#upscale button").forEach(b => {
+    const v = b.dataset.up;
+    b.classList.toggle("on", v === upscale);
+    b.setAttribute("aria-checked", v === upscale ? "true" : "false");
+    b.classList.toggle("off", v === "hires" && xbrzState === -1);
+  });
+  $("#upNote").textContent = xbrzState === -1 ? "High-res needs WebGL 2, which this browser hasn't got" :
+    upscale === "hires" && xbrzState === 2 && xbrz.lost ? "High-res is resting: the phone took back its graphics memory" :
+    "How the Psion's pixels are drawn on this screen";
+}
+function layersUi() {
+  $("#tText").classList.toggle("on", sharpText);
+  $("#tChrome").classList.toggle("on", sharpChrome);
+  $("#lText").classList.toggle("off", fontsState === -1);
+  $("#textNote").textContent = fontsState === -1 ? "Not in this build of PsiCast (it has no Psion fonts)" : "The Psion's own text drawn in this phone's fonts";
+}
+function layersChanged() {
+  if (layered()) loadFonts();
+  if (!rolesOn()) { role.fill(0); chromeParts = []; }
+  rebuildInk();
+  markDirty();
+  if (layered()) textAll();
+  layersUi();
+  paintAll();
+}
+document.querySelectorAll("#upscale button").forEach(b => b.onclick = () => {
+  const v = b.dataset.up;
+  if (v === "hires" && (xbrzState === -1 || !webgl2())) { xbrzState = -1; upscaleUi(); toast("High-res needs WebGL 2"); return; }
+  upscale = v;
+  store.set("upscale", v);
+  if (v === "hires") loadXbrz();
+  upscaleUi();
+  glStale = true; markDirty(); present();
+});
+$("#tText").onclick = () => {
+  if (fontsState === -1) { toast("Not in this build of PsiCast"); return; }
+  sharpText = !sharpText; store.set("sharpText", sharpText); layersChanged();
+};
+$("#tChrome").onclick = () => { sharpChrome = !sharpChrome; store.set("sharpChrome", sharpChrome); layersChanged(); };
+$("#tPics").onclick = () => {
+  if (picState === -1) { picState = 0; }                  // (asked again: perhaps a pack has been put on since)
+  picOn = !picOn; store.set("pictures", picOn);
+  if (picOn) loadPictures(); else picMatch = [];
+  picsUi(); markDirty(); present();
+};
+if (picOn) loadPictures();
+picsUi();
 
 // ----- link B -----
 let ws = null, retry = 0, retryTimer = 0, pingTimer = 0, alive = false, connGen = 0, lastHeard = 0;
@@ -1268,9 +2000,11 @@ function onBinary(buf) {
         }
       }
       ctx.putImageData(img, 0, 0, x, d0, w, d1 - d0);
+      markDirty(x, d0, w, d1 - d0);
       iconScroll(x, w, y0, y1, dy, d0, d1);
+      textScroll(x, w, y0, y1, dy, d0, d1);
       present();
-      if (theme.ui) rolesSoon();
+      if (rolesOn()) rolesSoon();
     }
   }
   if (haveScreen) { veil(); cv.style.opacity = 1; }
@@ -1738,7 +2472,10 @@ document.addEventListener("fullscreenchange", leftFull);
 document.addEventListener("webkitfullscreenchange", leftFull);
 
 // ----- sheets, settings, toasts -----
-function openSheet(id) { if (id === "shMore") renderDetails(); $("#" + id).classList.add("open"); }
+function openSheet(id) {
+  if (id === "shMore") { renderDetails(); if (xbrzState === 0 && !webgl2()) xbrzState = -1; upscaleUi(); layersUi(); }
+  $("#" + id).classList.add("open");
+}
 function closeSheets() { document.querySelectorAll(".sheet").forEach(s => s.classList.remove("open")); }
 document.querySelectorAll(".sheet").forEach(s => s.addEventListener("click", e => { if (e.target === s || e.target.hasAttribute("data-close")) closeSheets(); }));
 $("#bMore").onclick = () => openSheet("shMore");
@@ -1791,6 +2528,9 @@ document.addEventListener("visibilitychange", () => {
   if (!ws || ws.readyState > 1 || stale()) { retry = 0; connect(); }
 });
 
+upscaleUi();
+layersUi();
+if (layered()) loadFonts();
 applyTheme();
 controlState();
 if (store.get("fullStart", false)) enterFull(false);   // (a page cannot ask for the browser's full screen by itself; the home screen app has none to ask for)

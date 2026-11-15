@@ -2,7 +2,7 @@
 
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-support-FFDD00?logo=buymeacoffee&logoColor=000)](https://buymeacoffee.com/danedge)
 
-Shows the **Psion Series 5mx**'s screen, live, in a web browser - on an iPhone, say - through an M5Stack Atom on the Psion's serial port, **in colour if you like**, and, if you allow it, lets the person watching tap and type on the Psion. It can also turn the Psion into a Bluetooth keyboard for your phone.
+Shows the screen of a **Psion Series 5mx**, **netBook** or **Series 7**, live, in a web browser - on an iPhone, say - through an M5Stack Atom on the Psion's serial port, **in colour if you like**, and, if you allow it, lets the person watching tap and type on the Psion. It can also turn the Psion into a Bluetooth keyboard for your phone.
 
 <p align="center"><img src="docs/img/psicast-modern-system.png" alt="The 5mx's System screen on the phone, in the Modern colour theme" width="640"><br><i>A 5mx's System screen on the phone, in colour: the Modern theme</i></p>
 
@@ -17,7 +17,30 @@ Shows the **Psion Series 5mx**'s screen, live, in a web browser - on an iPhone, 
 
 PsiCast is part of the [PsiTerm suite](https://github.com/danieledge/psiterm) (PsiTerm, PsiMail, PsiWeb) and uses its networking and its Atom modem firmware.
 
-<p align="center"><img src="docs/img/psicast-sharing.png" alt="PsiCast sharing the screen with one viewer, who may tap and type" width="640"></p>
+## What's new in 0.24
+
+Since 0.21, the last public release.
+
+- Runs on the netBook and Series 7 as well as the 5mx, with the program icon in colour. The engine used to stop there with KERN-EXEC 3 (it used the BX instruction, which the StrongARM does not have). The viewer still shows a 640 x 240 screen.
+- Upscaling in the viewer is now Pixels, Smooth or High-res (xBRZ in WebGL 2). High-res smooths dithered greys first. See [*Sharper on the phone*](#sharper-on-the-phone).
+- Two new options, off as standard: Redraw boxes and lines sharply, and Redraw text sharply.
+- Replace known pictures (Settings > Viewing, off as standard) shows colour redraws of a program's pictures, from a picture pack on the Atom.
+- Fixed: a program that kept the Psion busy could starve the link. The engine has a watchdog now.
+- Fixed: after a firmware update the browser could keep the old viewer files.
+- The viewer changes need the Atom firmware from this release.
+
+## Screenshots
+
+PsiCast 0.24 on the netBook and the Series 5mx. Taken in emulators, with no Atom attached. Tap or click one to see it full size.
+
+<table>
+<tr><th>netBook</th><th>Series 5mx</th></tr>
+<tr><td colspan="2"><b>PsiCast as it starts: Share screen, Type on phone, Allow control</b></td></tr>
+<tr>
+<td><a href="docs/img/netbook-psicast-main.png"><img src="docs/img/netbook-psicast-main.png" alt="netBook: PsiCast's main screen" width="400"></a></td>
+<td><a href="docs/img/5mx-psicast-main.png"><img src="docs/img/5mx-psicast-main.png" alt="Series 5mx: PsiCast's main screen" width="400"></a></td>
+</tr>
+</table>
 
 ## What you need
 
@@ -139,6 +162,16 @@ Each part found is filled from its edges in with its colour, holes in its writin
 
 What stays grey: the contents of documents, photos and web pages (Modern's evenly spaced greys keep their tones, with a cool tint), and anything a program draws its own way. The code is `atom/src/viewer.html` (`findRoles`, `paintRow`) and `atom/src/iconmatch.js`; `atom/hosttest/test_roles.js` and `test_iconmatch.js` check them against real 5mx screens.
 
+### Sharper on the phone
+
+The 5mx's screen is 640 x 240; an iPhone on its side shows it nearly four times bigger. The viewer's settings (*Viewing*) choose how:
+
+- **Upscaling: Pixels, Smooth or High-res.** *Pixels* draws every Psion pixel as a square, all the same size, with hard edges ("sharp bilinear"). *Smooth* (the standard) fills in the stair-steps of curves and diagonals (Scale2x twice, then smoothly to the screen's size). *High-res* redraws edges with xBRZ, a pixel-art upscaler, in a WebGL 2 shader straight at the phone's resolution; pictures (anything with a grey other than EIKON's four nearby) are left as Pixels, so dithered photos don't turn into worms. Without WebGL 2 the choice is dimmed and says so; if the phone takes its graphics memory back, the viewer uses Smooth until it returns. Upright (below 2x) it is always Pixels. The old setting carries over: *Smooth the Psion's pixels* on is Smooth, off is Pixels.
+- **Redraw boxes and lines sharply** (off as standard). The parts of EIKON's interface the viewer recognises (the borders of dialogs and menus, command and toolbar buttons, title bars, scroll bars, selections, the toolbar's box, and the arrows of scroll bars, choice lists and cascades, and the tick) are drawn crisp: each border's own pixels on whole device pixels, so a line keeps the Psion's width with hard edges; button faces and title bars one flat light grey instead of the 50% dither; the arrows as clean triangles. What it doesn't recognise (pictures, documents) is left alone.
+- **Redraw text sharply** (off as standard). The text EIKON draws in the 5mx's ROM fonts is found exactly, bitmap for bitmap, and drawn again in the phone's own fonts (Helvetica Neue on an iPhone; condensed bold for the toolbar), each letter where the Psion's is, in the colours of the theme. Only lines that change are read again.
+
+All three work with every theme. Screenshots and videos are always the Psion's own pixels. The shader is `atom/src/xbrz.js`, the redraws `atom/src/sharp.js` (and the role pass in `viewer.html`), the text matcher `atom/src/textmatch.js`; the viewer loads each from the Atom only when its setting is on. The fonts' glyphs (`atom/src/eonfonts_local.json`) are made by `atom/tools/mkfonts.py` from the EPOC R5 SDK's `eon14.gdr`, which is the 5mx ROM's `Eon.gdr`; they are not in the public repository (see *Credits*), so a build without them dims *Redraw text sharply* (the boxes and lines still work, but for the Eikon font's arrows and tick). `atom/hosttest/test_textmatch.js` and `test_roles.js` check them against real 5mx screens, and `cast_page_shot.py` the whole page.
+
 ## How it works
 
 PsiCast is two programs, like the others in the suite: `PsiCast.app`, the window and the settings, and `psicast.exe`, the engine, which runs only while sharing and talks to the app through a shared memory chunk (`engine/psicast.h`).
@@ -195,6 +228,8 @@ The decoded screens match the emulator's own screenshots pixel for pixel, at 4 a
 - **The 5mx's face** in the viewer's full screen (`atom/src/silk5mx.jpg`) is the 5mx skin of the Psion Web Emulator, with the screen area cut out: "Psion Web Emulator by Joe Haines — https://joehaines.com/psion".
 - **The Atom's home picture** (`atom/tools/system5mx.png`) is the 5mx's own System screen.
 - **The Series 7 theme's colours and pictures** come from the Psion Series 7's own ROM (EIKON's colour list, and the colour versions of the 5mx's icons, paired by `atom/tools/s7icons.py`). They are Psion's.
+- **The High-res shader** (`atom/src/xbrz.js`) is a port of libretro's `xbrz-freescale.glsl` (github.com/libretro/glsl-shaders): Hyllian's xBR code (MIT) and Zenju's xBRZ (GPL-3.0). So that file is GPL-3.0, with its notices; it is a separate script, loaded only when High-res is chosen.
+- **The 5mx's ROM fonts** used to find text on the screen are Monotype's (Arial: "Copyright Monotype Typography Ltd 1997") and Psion's (the Eikon symbols). They are generated locally from the SDK by `atom/tools/mkfonts.py` and are not published.
 
 ## Support
 
@@ -203,4 +238,4 @@ you can [buy me a coffee](https://buymeacoffee.com/danedge).
 
 ## Licence
 
-MIT (see `LICENSE`), but for the parts listed under *Credits*, which are their owners'.
+MIT (see `LICENSE`), but for the parts listed under *Credits*, which are their owners' (and `atom/src/xbrz.js`, GPL-3.0).

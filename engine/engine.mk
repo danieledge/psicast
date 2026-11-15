@@ -31,7 +31,8 @@ LIBC    := -I$(CORE)/web/compat -I$(E)/include/libc -I$(E)/include
 CFLAGS  := $(ARCH) $(DEFS) -std=gnu99 -fno-builtin -w $(LIBC) -I$(CORE)/ssh -I$(CORE)/ssh/zlib -I$(CAST)/engine -I$(CAST)/codec -include $(CORE)/mail/compat/pmcompat.h
 ZFLAGS  := $(ARCH) $(DEFS) -DNO_GZIP -fno-builtin -w -I$(CORE)/web/compat $(LIBC)
 CXXFLAGS := $(ARCH) $(DEFS) -Wno-ctor-dtor-privacy -fcheck-new -fvtable-thunks -w -I$(CAST)/engine -I$(CORE)/ssh -I$(E)/include/libc -I$(E)/include
-LIBGCC  := $(SDK)/gcc-3.0-psion-98r2-9/lib/gcc-lib/arm-epoc-pe/3.0-psion-98r2/libgcc.a
+V4BX_DIR := $(O)
+include $(CORE)/tools/v4bx.mk
 SYSLIBS := $(REL)/estlib.lib $(REL)/euser.lib $(REL)/c32.lib $(REL)/efsrv.lib $(REL)/esock.lib $(REL)/insock.lib \
 	$(REL)/nifman.lib $(REL)/ws32.lib $(REL)/fbscli.lib $(REL)/gdi.lib $(LIBGCC)
 OUT     := $(O)/psicast.exe
@@ -73,10 +74,11 @@ LINKOBJS = $(REL)/eexe.o $(OBJS) $(REL)/ecrt0.o $(SYSLIBS)
 # window are on it), 64 KB stack as psimail.exe (psiglue's
 # dialling needs more than 32 KB); the big buffers are static.
 # uid3 0x01000A93, PsiCast.app's own being 0x01000A92
-$(OUT): $(OBJS)
+$(OUT): $(OBJS) $(LIBGCC)
 	arm-pe-ld -s -e _E32Startup --base-file $(O)/psicast.bas -o $(O)/psicast.tmp.exe $(LINKOBJS)
 	arm-pe-dlltool --as=arm-pe-as --output-exp $(O)/psicast.exp --base-file $(O)/psicast.bas $(LINKOBJS)
 	arm-pe-ld -s -e _E32Startup -Map $(O)/psicast.map -o $(O)/psicast.tmp.exe $(O)/psicast.exp $(LINKOBJS)
+	python3 $(V4BX_PY) --check $(O)/psicast.tmp.exe     # (no BX: the netBook has none)
 	wine $(E)/tools/petran.exe $(O)/psicast.tmp.exe $@ -nocall -uid1 0x1000007a -uid2 0x00000000 -uid3 0x01000A93 -heap 0x10000 0x200000 -stack 0x10000
 	@ls -la $@
 

@@ -53,13 +53,42 @@ def put_greys(ps, g):
             ps.fb[y * 320 + x // 2] = g[y][x] | (g[y][x + 1] << 4)
 
 
-def draw_eikon(ps):
+FONTS = os.path.join(HERE, "..", "src", "eonfonts_local.json")
+
+
+def eon_fonts():
+    """The 5mx's ROM fonts (tools/mkfonts.py; a local file), or None."""
+    import json
+    return json.load(open(FONTS)) if os.path.exists(FONTS) else None
+
+
+def eon_put(g, pack, name, cell, bold, x, y, s, c, fake=False):
+    """s in a ROM font (fake: EPOC's algorithmic bold) at pen x, cell top y, in grey c, into g (rows)."""
+    f = next(f for f in pack["fonts"] if f["name"] == name and f["cell"] == cell and bool(f["bold"]) == bool(bold))
+    by = {e[0]: e for e in f["glyphs"]}
+    for ch in s:
+        e = by[ord(ch)]
+        cols, mv = e[3:], e[2]
+        if fake and cols:
+            cols = [v | (cols[j - 1] if j else 0) for j, v in enumerate(cols)] + [cols[-1]]
+            mv += 1
+        for j, v in enumerate(cols):
+            for k in range(cell):
+                if v >> k & 1 and 0 <= y + k < 240 and 0 <= x + e[1] + j < 640:
+                    g[y + k][x + e[1] + j] = c
+        x += mv
+    return x
+
+
+def draw_eikon(ps, eon=None):
     """A 5mx screen drawn the way EIKON draws it, in 4 greys (the geometry of a
     real one, from the emulator): a page of text, a dialog with its title bar,
     a selected prompt and a button, a menu (a dialog's border, no title bar),
     a scroll bar (arrows, thumb, shaft) and the toolbar with its buttons.
-    #cccccc is a checkerboard of greys 10 and 15. Returns the points the
-    Series 7 and Modern themes' checks look at."""
+    #cccccc is a checkerboard of greys 10 and 15. With eon (the ROM fonts),
+    the writing is in the 5mx's own fonts, and the dialog has a choice
+    list with its arrows (the Eikon font's). Returns the points the Series 7
+    and Modern themes' checks look at."""
     from PIL import Image, ImageDraw, ImageFont
     try:
         f = ImageFont.truetype("DejaVuSans.ttf", 11)
@@ -77,7 +106,13 @@ def draw_eikon(ps):
             for x in range(x0, x1 + 1):
                 g[y][x] = 10 if (x + y) & 1 else 15
 
-    def text(x, y, t):
+    def text(x, y, t, small=False):
+        if eon:
+            if small:
+                eon_put(g, eon, "Arial", 11, 1, x, y + 1, t, 0)
+            else:
+                eon_put(g, eon, "Arial", 15, 0, x, y - 1, t, 0)
+            return
         im = Image.new("L", (640, 240), 0)
         ImageDraw.Draw(im).text((x, y), t, font=f, fill=255)
         px = im.load()
@@ -96,7 +131,7 @@ def draw_eikon(ps):
         g[b - 2][x + 1] = 15
         light(x + 3, y + 3, r - 3, b - 3)
         if label:
-            text(x + 8, y + 5, label)
+            text(x + 8, y + 5, label, small=True)
 
     def sbutton(x, y, b, arrow=0):                 # a scroll bar's arrow or thumb: 23 wide
         box(x, y, x + 22, b, 0)
@@ -179,6 +214,14 @@ def draw_eikon(ps):
     text(590, 6, "Word")
     for k, t in enumerate(("Bold", "Italic", "Print")):
         button(570, 25 + 36 * k, 639, 61 + 36 * k, t)
+    if eon:
+        # a choice list in the dialog: its arrows, and its value in a box
+        sym = next(f for f in eon["fonts"] if f["sym"])
+        eon_put(g, eon, sym["name"], sym["cell"], 0, 160, 128, "3", 0)
+        box(176, 127, 300, 145, 10)
+        box(177, 128, 299, 144, 15)
+        eon_put(g, eon, "Arial", 15, 0, 182, 129, "Classic", 0)
+        eon_put(g, eon, sym["name"], sym["cell"], 0, 306, 128, "1", 0)
     put_greys(ps, g)
     return {"title": (70, 70), "titletext": next((x, y) for y in range(55, 75) for x in range(72, 200) if g[y][x] == 0),
             "body": (68, 140), "face": (224, 164), "tbar": (600, 3), "tface": (575, 30), "page": (5, 100),
@@ -226,6 +269,204 @@ def mflat(g, x, y, rgb=None, pale=None):
         if dv >= 2:
             return pale if pale and {v, t} == {10, 15} else [(rgb(v)[i] + rgb(t)[i]) >> 1 for i in range(3)]
     return rgb(v)
+
+
+def screen_px(page, x0, y0, x1, y1):
+    """#screen's device pixels under Psion pixels x0,y0..x1-1,y1-1 (inset by a device pixel), as RGB triples."""
+    return page.evaluate("""([x0, y0, x1, y1]) => {
+        const c = document.getElementById('screen'), sx = c.width / 640, sy = c.height / 240;
+        const X0 = Math.ceil(x0 * sx) + 1, Y0 = Math.ceil(y0 * sy) + 1, X1 = Math.floor(x1 * sx) - 1, Y1 = Math.floor(y1 * sy) - 1;
+        const d = c.getContext('2d').getImageData(X0, Y0, X1 - X0, Y1 - Y0).data, o = [];
+        for (let i = 0; i < d.length; i += 4) o.push([d[i], d[i + 1], d[i + 2]]);
+        return o; }""", [x0, y0, x1, y1])
+
+
+def settle(page, ms=900):
+    page.wait_for_timeout(ms)
+    page.evaluate("() => window.psicastDebug.redraw()")
+    page.wait_for_timeout(250)
+
+
+def frames(page, n=6):
+    """The mean time of n whole presents, in ms, and the path they took."""
+    return page.evaluate("""(n) => new Promise(ok => {
+        const p = window.psicastPerf, n0 = p.n, ms0 = p.ms;
+        let k = 0;
+        const go = () => { if (k++ >= n) return ok([(p.ms - ms0) / Math.max(1, p.n - n0), p.path]); window.psicastDebug.redraw(); requestAnimationFrame(() => setTimeout(go, 30)); };
+        go(); })""", n)
+
+
+def setting(page, up=None, text=None, chrome=None, theme=None):
+    """The viewer's settings, through its sheet, as a person would."""
+    page.evaluate("() => document.getElementById('bMore').click()")
+    page.wait_for_timeout(150)
+    if theme:
+        page.click('.sw[data-id="%s"]' % theme)
+    if up:
+        page.click('#upscale button[data-up="%s"]' % up)
+    on = lambda i: page.evaluate("i => document.getElementById(i).classList.contains('on')", i)
+    if text is not None and on("tText") != text:
+        page.click("#tText")
+    if chrome is not None and on("tChrome") != chrome:
+        page.click("#tChrome")
+    page.click("#bClose")
+
+
+def layer_checks(b, iphone, url, page, ps, out, shots):
+    """Upscaling (High-res: the xBRZ shader) and the sharp redraws (boxes and
+    lines, text), on a screen drawn the way EIKON draws it in the 5mx's own
+    fonts: the settings, the paths taken, what is and isn't redrawn, the
+    model untouched, a lost WebGL context, timings, and screenshots in
+    landscape full screen and portrait."""
+    # (the setting as it was: Smooth the Psion's pixels, off -> Pixels, on -> Smooth)
+    for old, want in ((False, "pixels"), (True, "smooth")):
+        c2 = b.new_context(**iphone)
+        p2 = c2.new_page()
+        p2.add_init_script("localStorage.setItem('psicast.smooth', '%s')" % ("true" if old else "false"))
+        p2.goto(url)
+        p2.wait_for_timeout(400)
+        got = p2.evaluate("() => JSON.parse(localStorage.getItem('psicast.upscale'))")
+        e2e.check(got == want, "the old Smooth setting %s becomes Upscaling %s (%r)" % (old, want, got))
+        c2.close()
+    # the settings as they start: Smooth, the redraws off
+    page.evaluate("() => document.getElementById('bMore').click()")
+    page.wait_for_timeout(200)
+    st = page.evaluate("""() => ({ on: [...document.querySelectorAll('#upscale button.on')].map(b => b.dataset.up),
+        off: [...document.querySelectorAll('#upscale button.off')].map(b => b.dataset.up),
+        text: document.getElementById('tText').classList.contains('on'), chrome: document.getElementById('tChrome').classList.contains('on'),
+        note: document.getElementById('upNote').textContent, gl2: !!document.createElement('canvas').getContext('webgl2') })""")
+    page.evaluate("() => document.getElementById('upscale').scrollIntoView({ block: 'start' })")
+    page.wait_for_timeout(150)
+    page.locator(".card").first.screenshot(path=os.path.join(out, "10-settings-viewing.png"))
+    shots.append("10-settings-viewing.png")
+    page.click("#bClose")
+    e2e.check(st["on"] == ["smooth"] and not st["text"] and not st["chrome"], "Upscaling starts as Smooth, the redraws off (%r)" % st)
+    e2e.check((st["off"] == []) == st["gl2"], "High-res is dimmed only without WebGL 2 (%r)" % st)
+    gl2 = st["gl2"]
+    # without WebGL 2, High-res is dimmed and says why
+    nb = b.browser_type.launch(args=["--disable-webgl", "--disable-3d-apis"])
+    np_ = nb.new_context(**iphone).new_page()
+    np_.goto(url)
+    np_.wait_for_timeout(400)
+    np_.evaluate("() => document.getElementById('bMore').click()")
+    np_.wait_for_timeout(200)
+    np_.click('#upscale button[data-up="hires"]')
+    no = np_.evaluate("""() => ({ off: document.querySelector('#upscale button[data-up=hires]').classList.contains('off'),
+        on: [...document.querySelectorAll('#upscale button.on')].map(b => b.dataset.up), note: document.getElementById('upNote').textContent })""")
+    e2e.check(no["off"] and no["on"] == ["smooth"] and "WebGL 2" in no["note"], "without WebGL 2, High-res is dimmed with the reason, and not taken (%r)" % no)
+    nb.close()
+    print("cast_page_shot: WebGL 2 in this Chromium: %s" % gl2)
+    eon = eon_fonts()
+    if not eon:
+        print("cast_page_shot: no src/eonfonts_local.json: the sharp text is not checked")
+    saved = bytes(ps.fb)
+    pts = draw_eikon(ps, eon)
+    ps.update()
+    setting(page, theme="paper")
+    settle(page)
+    page.screenshot(path=os.path.join(out, "11-landscape-full-smooth.png"))
+    shots.append("11-landscape-full-smooth.png")
+    ms_smooth = frames(page)
+    # High-res: the shader's path (here WebGL 2 is SwiftShader's, on the CPU)
+    setting(page, up="hires")
+    settle(page, 1500)
+    ms_hires = frames(page)
+    if gl2:
+        e2e.check(ms_hires[1] == "hires", "High-res draws with the shader (%r)" % (ms_hires,))
+    page.screenshot(path=os.path.join(out, "12-landscape-full-hires.png"))
+    shots.append("12-landscape-full-hires.png")
+    dither = (210, 219, 290, 232)                   # (the dithered strip on the page: nothing the layers redraw)
+    pic0 = screen_px(page, *dither)
+    # ...and the sharp boxes, lines and text
+    setting(page, text=True, chrome=True)
+    settle(page, 1800)
+    ms_all = frames(page)
+    runs = page.evaluate("() => window.psicastDebug.runs()")
+    parts = page.evaluate("() => window.psicastDebug.parts()")
+    texts = [r["text"] for r in runs]
+    print("cast_page_shot: the layers found %d runs %r and the parts %r" % (len(runs), texts, parts))
+    e2e.check(parts.count("k5") >= 2 and parts.count("k3") >= 5 and "up" in parts and "down" in parts,
+              "the sharp boxes and lines: the dialog's and menu's borders, the buttons, the scroll bar's arrows (%r)" % parts)
+    if eon:
+        for t in ("About this Psion", "PsiCast shows the screen on a phone", "Classic", "Continue", "Theme", "<left>", "<right>"):
+            e2e.check(t in texts, "the sharp text finds %r (%r)" % (t, texts))
+    page.screenshot(path=os.path.join(out, "13-landscape-full-hires-sharp.png"))
+    shots.append("13-landscape-full-hires-sharp.png")
+    page.locator("#frame").screenshot(path=os.path.join(out, "13-frame-hires-sharp.png"))
+    shots.append("13-frame-hires-sharp.png")
+    e2e.check(screen_px(page, *dither) == pic0, "the redraws leave what they don't recognise as it was (the dithered strip)")
+    # faces and title bars: one flat light grey (Paper: the mean of 10 and 15), not the dither
+    for what, box in (("a button's face", (224, 164, 227, 178)), ("the title bar", (300, 57, 450, 73))):
+        px = screen_px(page, *box)
+        e2e.check(px and all(p == [212, 212, 212] for p in px), "%s is flat (%r)" % (what, sorted(set(map(tuple, px)))[:4]))
+    # the model is untouched: screenshots and videos are the Psion's picture exactly
+    model = page.evaluate("() => { const d = document.getElementById('model').getContext('2d').getImageData(0, 0, 640, 240).data, o = []; for (let i = 0; i < d.length; i += 4) o.push(d[i]); return o; }")
+    want = [v * 17 for byte in ps.fb for v in (byte & 15, byte >> 4)]
+    e2e.check(model == want, "with every redraw on, the model is still the Psion's picture pixel for pixel")
+    # Modern: the parts in its colours, flat, the text in the theme's colour for its part
+    setting(page, theme="modern")
+    settle(page, 1200)
+    page.screenshot(path=os.path.join(out, "14-landscape-full-hires-sharp-modern.png"))
+    shots.append("14-landscape-full-hires-sharp-modern.png")
+    px = screen_px(page, 300, 57, 450, 73)
+    e2e.check(px and all(p == [31, 58, 95] for p in px), "Modern: the title bar is flat navy (%r)" % sorted(set(map(tuple, px)))[:4])
+    # a change to a line of text: only its rows are looked at again
+    setting(page, theme="paper")
+    settle(page, 600)
+    g = pts["grey"]
+    for y in range(80, 106):
+        for x in range(76, 450):
+            g[y][x] = 15
+    eon_put(g, eon, "Arial", 15, 0, 80, 89, "PsiCast shows the screen at last", 0) if eon else None
+    put_rows(ps, g, 80, 106)
+    ps.update()
+    page.wait_for_timeout(1200)
+    m = page.evaluate("() => [window.psicastPerf.match, window.psicastPerf.matchRows]")
+    texts = [r["text"] for r in page.evaluate("() => window.psicastDebug.runs()")]
+    if eon:
+        e2e.check("PsiCast shows the screen at last" in texts and "PsiCast shows the screen on a phone" not in texts,
+                  "a line that changed is read again (%r)" % texts)
+    e2e.check(m[1] is not None and m[1] < 100, "...and only the rows round it (%r rows, %.1f ms)" % (m[1], m[0] or 0))
+    print("cast_page_shot: presents: Smooth %.1f ms, High-res %.1f ms (%s), High-res with the redraws %.1f ms; a strip of %d rows matched in %.1f ms"
+          % (ms_smooth[0], ms_hires[0], ms_hires[1], ms_all[0], m[1], m[0]))
+    # a lost WebGL context: Smooth meanwhile, High-res again when it is back
+    if gl2:
+        page.evaluate("() => { window.__lose = window.psicastDebug.hires().debugLose(); }")
+        settle(page, 400)
+        lost = page.evaluate("() => window.psicastPerf.path")
+        page.evaluate("() => window.__lose && window.__lose.restoreContext()")
+        settle(page, 800)
+        back = page.evaluate("() => window.psicastPerf.path")
+        e2e.check(lost == "smooth" and back == "hires", "a lost WebGL context: Smooth meanwhile, then High-res again (%s, %s)" % (lost, back))
+    # every Upscaling with the redraws on
+    for up in ("pixels", "smooth"):
+        setting(page, up=up)
+        settle(page, 600)
+        e2e.check(page.evaluate("() => window.psicastPerf.path") == up, "Upscaling %s with the redraws on draws that way" % up)
+        print("cast_page_shot: presents: %s with the redraws %.1f ms" % (up, frames(page)[0]))
+        page.locator("#frame").screenshot(path=os.path.join(out, "15-frame-%s-sharp.png" % up))
+        shots.append("15-frame-%s-sharp.png" % up)
+    # portrait (below 2x: Pixels whatever is chosen), before and after
+    setting(page, up="hires", text=False, chrome=False)
+    page.click("#exit")
+    page.wait_for_timeout(400)
+    page.set_viewport_size({"width": 390, "height": 844})
+    settle(page, 900)
+    page.screenshot(path=os.path.join(out, "16-portrait-plain.png"))
+    shots.append("16-portrait-plain.png")
+    setting(page, text=True, chrome=True)
+    settle(page, 1500)
+    e2e.check(page.evaluate("() => window.psicastPerf.path") == "pixels", "portrait, below 2x: sharp bilinear (Pixels)")
+    page.screenshot(path=os.path.join(out, "17-portrait-hires-sharp.png"))
+    shots.append("17-portrait-hires-sharp.png")
+    # (back as it was: landscape, full screen)
+    setting(page, up="smooth", text=False, chrome=False, theme="lcd")
+    page.set_viewport_size({"width": 844, "height": 390})
+    page.wait_for_timeout(300)
+    page.click("#bFull")
+    ps.fb[:] = saved
+    ps.update()
+    page.wait_for_timeout(600)
 
 
 def main():
@@ -461,6 +702,7 @@ def main():
             e2e.check(not page.evaluate("() => document.body.classList.contains('btnhide')") and page.evaluate("() => document.body.classList.contains('immersive')")
                       and len(ps.inputs) == n0, "a tap brings the buttons back, and goes no further (%r)" % ps.inputs[n0:])
             page.wait_for_timeout(500)
+            layer_checks(b, iphone, url, page, ps, out, shots)
             # paused on the Psion, then gone
             page.click("#exit")
             page.wait_for_timeout(400)
